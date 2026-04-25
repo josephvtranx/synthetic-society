@@ -260,18 +260,25 @@ async def generate_conversation(
     client = _get_client()
     argument = getattr(speaker, '_internalized_argument', 'I changed my mind on this.')
     conviction = getattr(speaker, '_conviction', 'convinced')
+    total_shift = abs(getattr(speaker, '_total_shift', 0.0))
 
     # Frame the speaker's delivery based on how convinced THEY are
-    if conviction == "convinced":
+    # AND their actual position — a speaker at -0.5 shouldn't advocate for the +1 side
+    if conviction == "convinced" and total_shift >= 0.05:
         speaker_framing = (
             "The speaker genuinely believes this now and argues from personal conviction. "
             "They rephrase it in their own words, through their own experience."
         )
     else:
+        # Even "skeptical" speakers who crossed the threshold are tentative.
+        # They might mention it but with heavy caveats and personal doubt.
         speaker_framing = (
-            "The speaker is NOT fully convinced — they're more like 'thinking out loud' or "
-            "'playing devil's advocate.' They might say 'someone told me...' or 'I'm not sure but...' "
-            "or raise it as a question rather than a statement. They still have doubts."
+            "The speaker is NOT convinced — they're conflicted. They heard something that "
+            "made them think, but they haven't changed their mind. They might say "
+            "'someone was telling me...' or 'I don't know if I agree, but...' or bring it up "
+            "as a question/debate topic rather than advocating for it. "
+            "They should sound like someone processing a new idea, NOT like someone spreading a message. "
+            "Their own doubts and counterarguments should come through."
         )
 
     if client:
@@ -375,14 +382,12 @@ def _pick_conversation_targets(
     (speaker_id, listener_id) pairs, deduplicated so no listener appears twice.
     """
     # Identify agents who shifted enough to actually bring it up in conversation
-    # Direct target always qualifies (they were personally addressed by the player)
+    # Must pass EVANGELIST_THRESHOLD — even the direct target doesn't evangelize
+    # if they barely moved. A -0.75 agent who shifted 0.01 wouldn't parrot the argument.
     shifted_ids = {
         aid for aid, a in agents.items()
         if getattr(a, '_internalized_argument', None) is not None
-        and (
-            abs(getattr(a, '_total_shift', 0.0)) >= EVANGELIST_THRESHOLD
-            or getattr(a, '_is_direct_target', False)
-        )
+        and abs(getattr(a, '_total_shift', 0.0)) >= EVANGELIST_THRESHOLD
     }
 
     if not shifted_ids:
@@ -700,12 +705,13 @@ async def run_simulation(
 
     direct_delta = await run_phase1(target, prompt, source_trust)
     target._total_shift = direct_delta
-    # Target always internalizes the player's argument — they were directly addressed
-    target._internalized_argument = prompt
-    target._conviction = "convinced" if abs(direct_delta) >= EVANGELIST_THRESHOLD else "skeptical"
-    # Force target to be a speaker regardless of shift size — they'll frame it
-    # through their conviction level (skeptical target = "someone told me...")
-    target._is_direct_target = True
+    # Target internalizes the argument only if they shifted enough to engage with it
+    if abs(direct_delta) >= EVANGELIST_THRESHOLD:
+        target._internalized_argument = prompt
+        target._conviction = "convinced" if abs(direct_delta) >= 0.05 else "skeptical"
+    else:
+        # Target barely moved — they heard it but it didn't stick enough to repeat
+        logger.info(f"  Target {target.name} shift too small ({direct_delta:.4f}) to evangelize")
 
     tick1_shifts = []
     if abs(direct_delta) > 0.001:
