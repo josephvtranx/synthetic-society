@@ -12,6 +12,7 @@ export type AgentData = {
   x: number;
   y: number;
   groups: string[];
+  stance?: string;
 };
 
 export type EdgeData = {
@@ -26,7 +27,7 @@ export type AgentShift = {
   agent_id: string;
   delta: number;
   new_position: number;
-  source: "direct" | "pressure"; // Phase 1 or Phase 2
+  source: "direct" | "pressure";
 };
 
 export type Propagation = {
@@ -36,12 +37,22 @@ export type Propagation = {
   resisted: boolean;
 };
 
+export type Conversation = {
+  from_id: string;
+  to_id: string;
+  speaker_message: string;
+  listener_response: string;
+  shift: number;
+  tick: number;
+};
+
 // Snapshot of the sim at one tick
 export type TickSnapshot = {
   tick: number;
   agents: AgentData[];
   shifts: AgentShift[];
   propagations: Propagation[];
+  conversations: Conversation[];
 };
 
 // Probe results after sim completes
@@ -55,8 +66,10 @@ export type ProbeResult = {
 
 // Full timeline returned by backend after sim runs
 export type SimTimeline = {
+  target_agent_id: string;
   edges: EdgeData[];
   ticks: TickSnapshot[];
+  conversations: Conversation[];
   probe_results: ProbeResult[];
   summary: {
     total_shifted: number;

@@ -3,7 +3,6 @@ Agent dataclass and population generation for Society Simulator.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 import uuid
 import random
 import numpy as np
@@ -72,92 +71,16 @@ class Agent:
     openness: float           # 0-1
     analytical: float         # 0-1
     conformity: float         # 0-1
-    agreeableness: float      # 0-1
-    influence_score: float    # 0-1
     group_ids: list[str] = field(default_factory=list)
 
     # Dynamic (changes each tick)
     position: float = 0.0             # -1.0 to 1.0
     confidence: float = 0.5           # 0-1
     identity_attachment: float = 0.3  # 0-1
-    memory: list[dict] = field(default_factory=list)  # last 8 interactions
 
-    # Spatial (backend tracks, frontend uses for animation)
+    # Spatial
     x: float = 0.5
     y: float = 0.5
-    target_x: float = 0.5
-    target_y: float = 0.5
-    current_interaction_partner_id: Optional[str] = None
-
-    # Track starting position for win conditions
-    starting_position: float = 0.0
-
-    def to_dict(self) -> dict:
-        """Serialize agent for state snapshot broadcast."""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "age": self.age,
-            "position": self.position,
-            "confidence": self.confidence,
-            "openness": self.openness,
-            "analytical": self.analytical,
-            "conformity": self.conformity,
-            "agreeableness": self.agreeableness,
-            "influence_score": self.influence_score,
-            "identity_attachment": self.identity_attachment,
-            "x": self.x,
-            "y": self.y,
-            "target_x": self.target_x,
-            "target_y": self.target_y,
-            "current_interaction_partner_id": self.current_interaction_partner_id,
-            "groups": self.group_ids,
-            "memory": self.memory[-8:],
-        }
-
-
-def update_belief(
-    agent: Agent,
-    argument_scores: dict,
-    source_agent: Agent,
-    peer_avg_position: float,
-) -> float:
-    """
-    Update agent's belief position based on an argument from source_agent.
-    Returns abs(final_delta) — the magnitude of the shift.
-    """
-    arg_quality = (
-        argument_scores["logic"] * agent.analytical
-        + argument_scores["emotion"] * (1 - agent.analytical)
-        + argument_scores["evidence"] * 0.3
-    ) / 1.3
-
-    similarity = len(set(agent.group_ids) & set(source_agent.group_ids)) / max(len(agent.group_ids), 1)
-    credibility = source_agent.influence_score * (0.5 + 0.5 * similarity)
-
-    elaboration = agent.openness * (1 - agent.identity_attachment)
-
-    if elaboration > 0.5:
-        # Central route: engage with the argument
-        raw_delta = arg_quality * credibility * agent.openness
-        direction = 1 if source_agent.position > agent.position else -1
-        raw_delta *= direction
-    else:
-        # Peripheral route: follow the crowd
-        peer_pressure = peer_avg_position - agent.position
-        raw_delta = peer_pressure * agent.conformity
-
-    final_delta = raw_delta * (1 - agent.confidence)
-    resistance = agent.identity_attachment * 0.5
-    final_delta *= (1 - resistance)
-
-    agent.position += final_delta
-    agent.position = max(-1.0, min(1.0, agent.position))
-
-    if abs(final_delta) > 0.05:
-        agent.confidence = min(1.0, agent.confidence + 0.02)
-
-    return abs(final_delta)
 
 
 # ── Cluster-specific trait distributions ─────────────────────────────────────
@@ -293,17 +216,12 @@ def generate_population(
             openness=openness,
             analytical=analytical,
             conformity=conformity,
-            agreeableness=0.5,      # deprecated, kept for compat
-            influence_score=0.0,    # deprecated, kept for compat
             group_ids=[],
             position=position,
             confidence=confidence,
             identity_attachment=identity_attachment,
             x=x,
             y=y,
-            target_x=x,
-            target_y=y,
-            starting_position=position,
         )
         agents[agent_id] = agent
 

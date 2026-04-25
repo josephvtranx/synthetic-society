@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SimTimeline, AgentData, EdgeData, TickSnapshot, ProbeResult } from "./types";
+import type { SimTimeline, AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation } from "./types";
 
 type Screen = "setup" | "playback" | "debrief";
 
@@ -13,6 +13,7 @@ type SimStore = {
   // Timeline (set once after backend returns)
   timeline: SimTimeline | null;
   edges: EdgeData[];
+  prompt: string;
 
   // Playback state
   currentTick: number;
@@ -25,7 +26,7 @@ type SimStore = {
   // Actions
   setScreen: (screen: Screen) => void;
   setLoading: (loading: boolean) => void;
-  setTimeline: (timeline: SimTimeline) => void;
+  setTimeline: (timeline: SimTimeline, prompt?: string) => void;
   setCurrentTick: (tick: number) => void;
   setPlaying: (playing: boolean) => void;
   setSpeed: (speed: PlaybackSpeed) => void;
@@ -38,6 +39,7 @@ export const useSimStore = create<SimStore>((set) => ({
   loading: false,
   timeline: null,
   edges: [],
+  prompt: "",
   currentTick: 0,
   playing: false,
   speed: 1,
@@ -45,10 +47,11 @@ export const useSimStore = create<SimStore>((set) => ({
 
   setScreen: (screen) => set({ screen }),
   setLoading: (loading) => set({ loading }),
-  setTimeline: (timeline) =>
+  setTimeline: (timeline, prompt) =>
     set({
       timeline,
       edges: timeline.edges,
+      prompt: prompt ?? "",
       currentTick: 0,
       screen: "playback",
       loading: false,
@@ -62,6 +65,7 @@ export const useSimStore = create<SimStore>((set) => ({
       screen: "setup",
       timeline: null,
       edges: [],
+      prompt: "",
       currentTick: 0,
       playing: false,
       selectedAgentId: null,
@@ -97,4 +101,18 @@ export const useSelectedAgent = (): AgentData | null => {
 export const useTotalTicks = (): number => {
   const timeline = useSimStore((s) => s.timeline);
   return timeline ? timeline.ticks.length - 1 : 0;
+};
+
+export const useCurrentConversations = (): Conversation[] => {
+  const snapshot = useCurrentSnapshot();
+  return snapshot?.conversations ?? [];
+};
+
+export const useAgentConversations = (agentId: string | null): Conversation[] => {
+  const timeline = useSimStore((s) => s.timeline);
+  const currentTick = useSimStore((s) => s.currentTick);
+  if (!timeline || !agentId) return [];
+  return timeline.conversations.filter(
+    (c) => (c.from_id === agentId || c.to_id === agentId) && c.tick <= currentTick
+  );
 };

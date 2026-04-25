@@ -1,19 +1,10 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
-import { useSimStore, useCurrentAgents, useCurrentSnapshot } from "@/lib/store";
-import { positionToColor, positionToColorRgb, BG_CANVAS } from "@/lib/colors";
+import { useSimStore, useCurrentAgents, useCurrentSnapshot, useCurrentConversations } from "@/lib/store";
+import { positionToColorRgb, BG_CANVAS } from "@/lib/colors";
 import { drawTownBackground } from "@/lib/draw-houses";
-import type { AgentShift, Propagation } from "@/lib/types";
-
 type Expression = "idle" | "thinking" | "shifted" | "resistant";
-
-function getExpression(agentId: string, shifts: AgentShift[], propagations: Propagation[]): Expression {
-  if (shifts.find((s) => s.agent_id === agentId)) return "shifted";
-  if (propagations.find((p) => p.to_id === agentId && p.resisted)) return "resistant";
-  if (propagations.find((p) => p.to_id === agentId && !p.resisted)) return "thinking";
-  return "idle";
-}
 
 type RenderState = {
   x: number;
@@ -21,7 +12,7 @@ type RenderState = {
   color: [number, number, number];
   expression: Expression;
   pulseAge: number;
-  bobPhase: number;
+  walkPhase: number;
   blinkTimer: number;
   blinking: boolean;
   lookAngle: number;
@@ -29,13 +20,216 @@ type RenderState = {
   shiftDelta: number;
   shiftSource: "direct" | "pressure" | null;
   shiftAge: number;
+  speechBubble: { text: string; age: number } | null;
 };
+
+// Stick figure dimensions
+const HEAD_R = 7;
+const BODY_LEN = 10;
+const LEG_LEN = 8;
+const LEG_SPREAD = 5;
+const OUTLINE = 2;
+
+function drawStickFigure(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number, // center of head
+  fill: [number, number, number],
+  expression: Expression,
+  blinking: boolean,
+  lookAngle: number,
+  walkPhase: number,
+  isSelected: boolean,
+  isTarget: boolean,
+  shiftAge: number,
+  shiftDelta: number,
+  name: string,
+) {
+  const neckY = y + HEAD_R;
+  const hipY = neckY + BODY_LEN;
+  const footY = hipY + LEG_LEN;
+
+  // Selection ring
+  if (isSelected && !isTarget) {
+    ctx.beginPath();
+    ctx.arc(x, y, HEAD_R + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Target indicator
+  if (isTarget) {
+    ctx.beginPath();
+    ctx.arc(x, y, HEAD_R + 6, 0, Math.PI * 2);
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // Crosshair ticks
+    const cr = HEAD_R + 6;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const angle = (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(angle) * (cr - 2), y + Math.sin(angle) * (cr - 2));
+      ctx.lineTo(x + Math.cos(angle) * (cr + 4), y + Math.sin(angle) * (cr + 4));
+      ctx.stroke();
+    }
+  }
+
+  // Legs — slight walk cycle
+  const legSwing = Math.sin(walkPhase) * 2;
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = OUTLINE;
+  ctx.lineCap = "round";
+
+  // Left leg
+  ctx.beginPath();
+  ctx.moveTo(x, hipY);
+  ctx.lineTo(x - LEG_SPREAD + legSwing, footY);
+  ctx.stroke();
+
+  // Right leg
+  ctx.beginPath();
+  ctx.moveTo(x, hipY);
+  ctx.lineTo(x + LEG_SPREAD - legSwing, footY);
+  ctx.stroke();
+
+  // Body
+  ctx.beginPath();
+  ctx.moveTo(x, neckY);
+  ctx.lineTo(x, hipY);
+  ctx.stroke();
+
+  // Arms — slight swing opposite to legs
+  const armSwing = Math.sin(walkPhase + Math.PI) * 3;
+  const armY = neckY + 3;
+  const armLen = 7;
+
+  ctx.beginPath();
+  ctx.moveTo(x, armY);
+  ctx.lineTo(x - 6 + armSwing, armY + armLen);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(x, armY);
+  ctx.lineTo(x + 6 - armSwing, armY + armLen);
+  ctx.stroke();
+
+  // Head — filled circle with black outline
+  ctx.beginPath();
+  ctx.arc(x, y, HEAD_R, 0, Math.PI * 2);
+  const [cr2, cg, cb] = fill;
+  ctx.fillStyle = `rgb(${cr2},${cg},${cb})`;
+  ctx.fill();
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = OUTLINE;
+  ctx.stroke();
+
+  // --- Face ---
+  const eyeY = y - 1;
+  const eyeSpacing = 3.5;
+
+  if (blinking && expression === "idle") {
+    // Blink — horizontal lines
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - eyeSpacing - 1.5, eyeY);
+    ctx.lineTo(x - eyeSpacing + 1.5, eyeY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + eyeSpacing - 1.5, eyeY);
+    ctx.lineTo(x + eyeSpacing + 1.5, eyeY);
+    ctx.stroke();
+  } else if (expression === "resistant") {
+    // Squinting — narrow ellipses
+    ctx.fillStyle = "#1a1a1a";
+    ctx.beginPath();
+    ctx.ellipse(x - eyeSpacing, eyeY, 2, 1, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + eyeSpacing, eyeY, 2, 1, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (expression === "shifted") {
+    // Wide eyes — bigger dots
+    ctx.fillStyle = "#1a1a1a";
+    ctx.beginPath();
+    ctx.arc(x - eyeSpacing, eyeY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + eyeSpacing, eyeY, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // Normal — dot eyes with slight look direction
+    ctx.fillStyle = "#1a1a1a";
+    const look = lookAngle * 1;
+    ctx.beginPath();
+    ctx.arc(x - eyeSpacing + look, eyeY, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + eyeSpacing + look, eyeY, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Mouth
+  const mouthY = y + 3;
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = "round";
+
+  if (expression === "shifted") {
+    // O mouth
+    ctx.beginPath();
+    ctx.arc(x, mouthY, 2, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (expression === "resistant") {
+    // Frown
+    ctx.beginPath();
+    ctx.arc(x, mouthY + 2.5, 3, Math.PI * 1.25, Math.PI * 1.75);
+    ctx.stroke();
+  } else if (expression === "thinking") {
+    // Wavy mouth
+    ctx.beginPath();
+    ctx.moveTo(x - 3, mouthY);
+    ctx.bezierCurveTo(x - 1.5, mouthY - 1.5, x + 1.5, mouthY + 1.5, x + 3, mouthY);
+    ctx.stroke();
+  } else {
+    // Smile
+    ctx.beginPath();
+    ctx.arc(x, mouthY - 0.5, 3, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+
+  // Name — below feet
+  ctx.font = "bold 9px 'Courier New', monospace";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillText(name.split(" ")[0].toUpperCase(), x, footY + 12);
+
+  // Shift indicator — floating number
+  if (shiftAge >= 0 && shiftAge < 2.5 && shiftDelta !== 0) {
+    const fadeIn = Math.min(1, shiftAge * 4);
+    const fadeOut = Math.max(0, 1 - (shiftAge - 1.5));
+    const alpha = Math.min(fadeIn, fadeOut);
+    const floatUp = shiftAge * 8;
+    const sign = shiftDelta > 0 ? "+" : "";
+    ctx.font = "bold 10px 'Courier New', monospace";
+    ctx.fillStyle = `rgba(26,26,26,${alpha})`;
+    const labelOffset = isTarget ? 18 : 10;
+    ctx.fillText(`${sign}${shiftDelta.toFixed(2)}`, x, y - HEAD_R - labelOffset - floatUp);
+  }
+}
 
 export default function NetworkGraph() {
   const agents = useCurrentAgents();
   const edges = useSimStore((s) => s.edges);
   const selectAgent = useSimStore((s) => s.selectAgent);
   const selectedAgentId = useSimStore((s) => s.selectedAgentId);
+  const targetAgentId = useSimStore((s) => s.timeline?.target_agent_id ?? null);
   const snapshot = useCurrentSnapshot();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +241,8 @@ export default function NetworkGraph() {
   const shifts = snapshot?.shifts ?? [];
   const propagations = snapshot?.propagations ?? [];
   const currentTick = snapshot?.tick ?? 0;
+
+  const conversations = snapshot?.conversations ?? [];
 
   // Detect tick change
   if (currentTick !== lastTickRef.current) {
@@ -76,6 +272,19 @@ export default function NetworkGraph() {
         s.shiftSource = null;
         s.shiftAge = -1;
       }
+
+      // Set speech bubbles from conversations
+      const asFrom = conversations.find((c) => c.from_id === agent.id);
+      const asTo = conversations.find((c) => c.to_id === agent.id);
+      if (asFrom) {
+        const words = asFrom.speaker_message.split(" ").slice(0, 5).join(" ");
+        s.speechBubble = { text: words + (asFrom.speaker_message.split(" ").length > 5 ? "..." : ""), age: 0 };
+      } else if (asTo) {
+        const words = asTo.listener_response.split(" ").slice(0, 4).join(" ");
+        s.speechBubble = { text: words + (asTo.listener_response.split(" ").length > 4 ? "..." : ""), age: 0 };
+      } else {
+        s.speechBubble = null;
+      }
     }
   }
 
@@ -104,11 +313,10 @@ export default function NetworkGraph() {
       const ctx = canvas.getContext("2d")!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Background
+      // Background — clean white
       ctx.fillStyle = BG_CANVAS;
       ctx.fillRect(0, 0, w, h);
 
-      // Draw town
       drawTownBackground(ctx, w, h);
 
       const pad = 80;
@@ -124,10 +332,10 @@ export default function NetworkGraph() {
             x: agent.x, y: agent.y,
             color: positionToColorRgb(agent.position),
             expression: "idle", pulseAge: -1,
-            bobPhase: Math.random() * Math.PI * 2,
+            walkPhase: Math.random() * Math.PI * 2,
             blinkTimer: 2 + Math.random() * 4, blinking: false,
             lookAngle: 0, lookTarget: 0,
-            shiftDelta: 0, shiftSource: null, shiftAge: -1,
+            shiftDelta: 0, shiftSource: null, shiftAge: -1, speechBubble: null,
           };
           states.set(agent.id, s);
         }
@@ -136,7 +344,7 @@ export default function NetworkGraph() {
         // Smooth lerp
         s.x += (agent.x - s.x) * Math.min(1, dt * 3);
         s.y += (agent.y - s.y) * Math.min(1, dt * 3);
-        s.bobPhase += dt * 1.6;
+        s.walkPhase += dt * 1.2;
         s.blinkTimer -= dt;
         if (s.blinkTimer <= 0) {
           s.blinking = !s.blinking;
@@ -149,9 +357,13 @@ export default function NetworkGraph() {
         if (s.pulseAge >= 0) s.pulseAge += dt;
         if (s.shiftAge >= 0) s.shiftAge += dt;
         if (s.shiftAge > 3 && s.expression !== "idle") s.expression = "idle";
+        if (s.speechBubble) {
+          s.speechBubble.age += dt;
+          if (s.speechBubble.age > 2.5) s.speechBubble = null;
+        }
       }
 
-      // Draw edges
+      // Draw edges — simple thin black lines
       for (const edge of edges) {
         const sa = states.get(edge.source);
         const sb = states.get(edge.target);
@@ -172,177 +384,105 @@ export default function NetworkGraph() {
 
         if (prop && sa.shiftAge >= 0 && sa.shiftAge < 2) {
           const flash = Math.max(0, 1 - sa.shiftAge / 2);
-          ctx.strokeStyle = prop.resisted
-            ? `rgba(200,100,100,${0.08 + flash * 0.25})`
-            : `rgba(80,80,100,${0.06 + flash * 0.3})`;
+          ctx.strokeStyle = `rgba(26,26,26,${0.06 + flash * 0.3})`;
           ctx.lineWidth = 1 + flash * 2;
         } else {
-          ctx.strokeStyle = "rgba(0,0,0,0.05)";
+          ctx.strokeStyle = "rgba(0,0,0,0.06)";
           ctx.lineWidth = 0.8;
         }
         ctx.stroke();
       }
 
-      // Draw agents
+      // Draw agents as stick figures
       for (const agent of agents) {
         const s = states.get(agent.id);
         if (!s) continue;
 
         const baseX = pad + s.x * gw;
-        const bob = Math.sin(s.bobPhase) * 1.8;
-        const baseY = pad + s.y * gh + bob;
+        const baseY = pad + s.y * gh;
         const isSelected = agent.id === selectedAgentId;
-        const radius = 14;
+        const isTarget = agent.id === targetAgentId;
 
         let drawX = baseX;
-        if (s.expression === "thinking") drawX += Math.sin(s.bobPhase * 3) * 2.5;
+        // Thinking wobble
+        if (s.expression === "thinking") drawX += Math.sin(s.walkPhase * 3) * 2;
+        // Resistant shake
         if (s.expression === "resistant" && s.shiftAge >= 0 && s.shiftAge < 0.5) {
           drawX += Math.sin(s.shiftAge * 40) * 3 * (1 - s.shiftAge * 2);
         }
 
-        // Pulse
+        // Pulse ring on shift
         if (s.pulseAge >= 0 && s.pulseAge < 1.5) {
-          const pr = radius + s.pulseAge * 28;
+          const pr = HEAD_R + s.pulseAge * 25;
           const pa = Math.max(0, 1 - s.pulseAge / 1.5);
           ctx.beginPath();
           ctx.arc(drawX, baseY, pr, 0, Math.PI * 2);
-          ctx.strokeStyle = `rgba(60,60,80,${pa * 0.2})`;
+          ctx.strokeStyle = `rgba(26,26,26,${pa * 0.25})`;
           ctx.lineWidth = 1.5;
           ctx.stroke();
         }
 
-        // Shadow
-        ctx.beginPath();
-        ctx.ellipse(baseX, pad + s.y * gh + radius + 5, radius * 0.65, 3, 0, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(0,0,0,0.08)";
-        ctx.fill();
+        drawStickFigure(
+          ctx, drawX, baseY,
+          s.color, s.expression, s.blinking,
+          s.lookAngle, s.walkPhase,
+          isSelected, isTarget,
+          s.shiftAge, s.shiftDelta,
+          agent.name,
+        );
 
-        // Body
-        ctx.beginPath();
-        ctx.arc(drawX, baseY, radius, 0, Math.PI * 2);
-        const [cr, cg, cb] = s.color;
-        ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
-        ctx.fill();
-        ctx.strokeStyle = `rgba(${Math.max(0, cr - 40)},${Math.max(0, cg - 40)},${Math.max(0, cb - 40)},0.3)`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        // Speech bubble
+        if (s.speechBubble) {
+          const bubble = s.speechBubble;
+          const fadeIn = Math.min(1, bubble.age / 0.3);
+          const fadeOut = bubble.age > 1.8 ? Math.max(0, 1 - (bubble.age - 1.8) / 0.7) : 1;
+          const alpha = fadeIn * fadeOut;
+          if (alpha > 0) {
+            ctx.font = "8px 'Courier New', monospace";
+            const textW = ctx.measureText(bubble.text).width;
+            const bw = textW + 10;
+            const bh = 16;
+            const bx = drawX - bw / 2;
+            const by = baseY - HEAD_R - 24 - bh;
 
-        // White highlight (top-left)
-        ctx.beginPath();
-        ctx.arc(drawX - radius * 0.25, baseY - radius * 0.3, radius * 0.35, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255,255,255,0.25)";
-        ctx.fill();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = "#1a1a1a";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.rect(bx, by, bw, bh);
+            ctx.fill();
+            ctx.stroke();
 
-        // Selection
-        if (isSelected) {
-          ctx.beginPath();
-          ctx.arc(drawX, baseY, radius + 3, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(60,60,80,0.5)";
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([3, 3]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+            // Tail
+            ctx.beginPath();
+            ctx.moveTo(drawX - 3, by + bh);
+            ctx.lineTo(drawX, by + bh + 5);
+            ctx.lineTo(drawX + 3, by + bh);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(drawX - 3, by + bh);
+            ctx.lineTo(drawX, by + bh + 5);
+            ctx.lineTo(drawX + 3, by + bh);
+            ctx.strokeStyle = "#1a1a1a";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            // Cover tail-box seam
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(drawX - 3, by + bh - 1, 6, 2);
 
-        // --- Face ---
-        const eyeY = baseY - 2;
-        const es = 4.5;
-        const look = s.lookAngle * 1.2;
-
-        if (s.blinking && s.expression === "idle") {
-          ctx.strokeStyle = "#3a3a40";
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.moveTo(drawX - es - 1.5 + look, eyeY);
-          ctx.lineTo(drawX - es + 1.5 + look, eyeY);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(drawX + es - 1.5 + look, eyeY);
-          ctx.lineTo(drawX + es + 1.5 + look, eyeY);
-          ctx.stroke();
-        } else if (s.expression === "resistant") {
-          ctx.fillStyle = "#3a3a40";
-          ctx.beginPath();
-          ctx.ellipse(drawX - es, eyeY, 2.5, 1, -0.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(drawX + es, eyeY, 2.5, 1, 0.2, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (s.expression === "shifted") {
-          ctx.fillStyle = "#3a3a40";
-          ctx.beginPath();
-          ctx.arc(drawX - es, eyeY, 3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(drawX + es, eyeY, 3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "rgba(255,255,255,0.5)";
-          ctx.beginPath();
-          ctx.arc(drawX - es + 1, eyeY - 1, 1, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(drawX + es + 1, eyeY - 1, 1, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.fillStyle = "#3a3a40";
-          ctx.beginPath();
-          ctx.arc(drawX - es + look, eyeY, 2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(drawX + es + look, eyeY, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // Mouth
-        const mouthY = baseY + 4;
-        ctx.strokeStyle = "#3a3a40";
-        ctx.lineWidth = 1.2;
-        ctx.lineCap = "round";
-
-        if (s.expression === "shifted") {
-          ctx.beginPath();
-          ctx.arc(drawX, mouthY, 2.5, 0, Math.PI * 2);
-          ctx.stroke();
-        } else if (s.expression === "resistant") {
-          ctx.beginPath();
-          ctx.arc(drawX, mouthY + 3, 4, Math.PI * 1.25, Math.PI * 1.75);
-          ctx.stroke();
-        } else if (s.expression === "thinking") {
-          ctx.beginPath();
-          ctx.moveTo(drawX - 4, mouthY);
-          ctx.bezierCurveTo(drawX - 2, mouthY - 2, drawX + 2, mouthY + 2, drawX + 4, mouthY);
-          ctx.stroke();
-        } else {
-          ctx.beginPath();
-          ctx.arc(drawX, mouthY - 1, 3.5, Math.PI * 0.15, Math.PI * 0.85);
-          ctx.stroke();
-        }
-        ctx.lineCap = "butt";
-
-        // Name
-        ctx.font = "11px 'Inter', system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillStyle = "rgba(40,40,50,0.5)";
-        ctx.fillText(agent.name.split(" ")[0], baseX, baseY + radius + 16);
-
-        // Shift indicator
-        if (s.shiftAge >= 0 && s.shiftAge < 2.5 && s.shiftDelta !== 0) {
-          const fadeIn = Math.min(1, s.shiftAge * 4);
-          const fadeOut = Math.max(0, 1 - (s.shiftAge - 1.5));
-          const alpha = Math.min(fadeIn, fadeOut);
-          const floatUp = s.shiftAge * 8;
-          const sign = s.shiftDelta > 0 ? "+" : "";
-          ctx.font = "bold 10px 'Inter', system-ui, sans-serif";
-          ctx.fillStyle = s.shiftSource === "direct"
-            ? `rgba(58,158,106,${alpha})`
-            : `rgba(212,133,58,${alpha})`;
-          ctx.fillText(`${sign}${s.shiftDelta.toFixed(2)}`, baseX, baseY - radius - 8 - floatUp);
+            ctx.fillStyle = "#1a1a1a";
+            ctx.textAlign = "center";
+            ctx.fillText(bubble.text, drawX, by + 11);
+            ctx.globalAlpha = 1;
+          }
         }
       }
 
       animRef.current = requestAnimationFrame(draw);
     },
-    [agents, edges, selectedAgentId, shifts, propagations],
+    [agents, edges, selectedAgentId, targetAgentId, shifts, propagations, conversations],
   );
 
   useEffect(() => {
@@ -366,7 +506,7 @@ export default function NetworkGraph() {
       if (!s) continue;
       const ax = pad + s.x * gw;
       const ay = pad + s.y * gh;
-      if (Math.sqrt((mx - ax) ** 2 + (my - ay) ** 2) < 20) {
+      if (Math.sqrt((mx - ax) ** 2 + (my - ay) ** 2) < 25) {
         selectAgent(agent.id);
         return;
       }

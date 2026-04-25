@@ -1,21 +1,23 @@
 """
-FastAPI app with REST endpoints and WebSocket for Society Simulator.
+FastAPI app for Society Simulator.
+Two endpoints: /populate (preview) and /simulate (run full sim).
 """
 
-import asyncio
-import json
+import logging
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
-import simulation
-from simulate import run_simulation
-from agent import generate_population
+logger = logging.getLogger("sim")
+
+from simulate import run_simulation, generate_all_stances
+from agent import Agent, generate_population
 from network import create_society_graph
+import networkx as nx
 
 app = FastAPI(title="Society Simulator")
 
@@ -27,29 +29,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── WebSocket connection manager ────────────────────────────────────────────
-connected_clients: set[WebSocket] = set()
-
-
-async def broadcast_state(snapshot: dict) -> None:
-    """Send state snapshot to all connected WebSocket clients."""
-    dead = set()
-    data = json.dumps(snapshot)
-    for ws in connected_clients:
-        try:
-            await ws.send_text(data)
-        except Exception:
-            dead.add(ws)
-    connected_clients.difference_update(dead)
-
-
-# ── New single-message simulation endpoints ────────────────────────────────
+# ── Cached population from last /populate call ───────────────────────────
+_cached_agents: dict[str, Agent] = {}
+_cached_graph: nx.Graph | None = None
+_cached_stances: dict[str, str] = {}
 
 
 class SimulateRequest(BaseModel):
     prompt: str
     target_agent_id: str = ""
-    target_index: int = 0  # fallback: pick agent by list index
+    target_index: int = 0
     society_type: str = "polarized"
     n_agents: int = 25
 
@@ -58,17 +47,31 @@ class SimulateRequest(BaseModel):
 async def populate(body: dict):
     """
     Generate a population and graph for the setup preview.
-    Returns agents and edges so the frontend can display real agents.
+    Caches agents, graph, and stances so /simulate can reuse them.
     """
+    global _cached_agents, _cached_graph, _cached_stances
+
     society_type = body.get("society_type", "polarized")
     n_agents = max(5, min(50, body.get("n_agents", 25)))
+    topic = body.get("topic", "")
+    logger.info(f"POST /populate: society_type={society_type} n_agents={n_agents} topic=\"{topic[:60]}\"")
 
-    agents = generate_population(n_agents, "preview", society_type)
+    agents = generate_population(n_agents, topic or "preview", society_type)
     graph = create_society_graph(agents)
+
+    # Generate stances if a topic is provided
+    stances: dict[str, str] = {}
+    if topic:
+        stances = await generate_all_stances(agents, topic)
+
+    # Cache for /simulate
+    _cached_agents = agents
+    _cached_graph = graph
+    _cached_stances = stances
 
     agents_list = []
     for a in agents.values():
-        agents_list.append({
+        agent_data: dict = {
             "id": a.id,
             "name": a.name,
             "age": a.age,
@@ -81,7 +84,10 @@ async def populate(body: dict):
             "x": round(a.x, 4),
             "y": round(a.y, 4),
             "groups": a.group_ids,
-        })
+        }
+        if a.id in stances:
+            agent_data["stance"] = stances[a.id]
+        agents_list.append(agent_data)
 
     edges = []
     for u, v, data in graph.edges(data=True):
@@ -98,174 +104,30 @@ async def populate(body: dict):
 async def simulate(req: SimulateRequest):
     """
     Run the full single-message simulation.
-    Returns a complete SimTimeline for frontend playback.
+    Reuses the cached population from /populate if the target agent exists in it.
     """
+    # Check if we can reuse the cached population
+    use_cache = (
+        _cached_agents
+        and _cached_graph is not None
+        and (req.target_agent_id in _cached_agents or req.target_index < len(_cached_agents))
+    )
+
+    if use_cache:
+        logger.info(f"POST /simulate: REUSING cached population ({len(_cached_agents)} agents)")
+    else:
+        logger.info(f"POST /simulate: generating fresh population")
+
+    logger.info(f"  target={req.target_agent_id or f'index:{req.target_index}'} type={req.society_type} n={req.n_agents} prompt=\"{req.prompt[:80]}\"")
+
     result = await run_simulation(
         prompt=req.prompt,
         target_agent_id=req.target_agent_id,
         target_index=req.target_index,
         society_type=req.society_type,
         n_agents=max(5, min(50, req.n_agents)),
+        agents=_cached_agents if use_cache else None,
+        graph=_cached_graph if use_cache else None,
+        stances=_cached_stances if use_cache else None,
     )
     return result
-
-
-# ── Legacy REST Endpoints ──────────────────────────────────────────────────
-
-@app.post("/start")
-async def start_simulation(body: dict):
-    """
-    Initialize a new simulation.
-    Body: {"topic": str, "n_agents": int, "game_mode": str, "society_type": str}
-    """
-    topic = body.get("topic", "minimum wage")
-    n_agents = max(5, min(50, body.get("n_agents", 25)))
-    game_mode = body.get("game_mode", "sandbox")
-    society_type = body.get("society_type", "random")
-
-    snapshot = simulation.init_simulation(topic, n_agents, game_mode, society_type)
-    return snapshot
-
-
-@app.post("/pause")
-async def pause_simulation():
-    simulation.is_running = False
-    return {"status": "paused"}
-
-
-@app.post("/resume")
-async def resume_simulation():
-    simulation.is_running = True
-    return {"status": "running"}
-
-
-@app.get("/state")
-async def get_state():
-    return simulation.get_state_snapshot()
-
-
-@app.post("/broadcast")
-async def broadcast_message(body: dict):
-    """Queue a player message for next tick."""
-    message = body.get("message", "")
-    target = body.get("target", "all")
-    simulation.queue_broadcast(message, target)
-    return {"queued": True}
-
-
-@app.post("/inject_agent")
-async def inject_agent(body: dict):
-    """Inject a new agent into the simulation."""
-    return simulation.sim_inject_agent(
-        name=body.get("name", "Injected Agent"),
-        position=max(-1.0, min(1.0, body.get("position", 0.0))),
-        openness=max(0.0, min(1.0, body.get("openness", 0.5))),
-        conformity=max(0.0, min(1.0, body.get("conformity", 0.5))),
-        influence=max(0.0, min(1.0, body.get("influence", 0.5))),
-    )
-
-
-@app.post("/sever")
-async def sever_connection(body: dict):
-    """Sever connection between two agents."""
-    agent_a_id = body.get("agent_a_id", "")
-    agent_b_id = body.get("agent_b_id", "")
-    return simulation.sim_sever_connection(agent_a_id, agent_b_id)
-
-
-@app.post("/speed")
-async def set_speed(body: dict):
-    """Set tick speed. Clamped to [0.5, 10.0]."""
-    duration = body.get("tick_duration", 3.0)
-    simulation.tick_duration_seconds = max(0.5, min(10.0, float(duration)))
-    return {"tick_duration": simulation.tick_duration_seconds}
-
-
-# ── WebSocket ───────────────────────────────────────────────────────────────
-
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
-    connected_clients.add(ws)
-
-    try:
-        # Send current state on connect
-        await ws.send_text(json.dumps(simulation.get_state_snapshot()))
-
-        async def tick_loop():
-            while True:
-                if simulation.is_running and not simulation.has_converged:
-                    await simulation.run_tick(broadcast_state)
-                    await asyncio.sleep(simulation.tick_duration_seconds)
-                else:
-                    await asyncio.sleep(0.2)
-
-        async def receive_loop():
-            while True:
-                raw = await ws.receive_text()
-                try:
-                    msg = json.loads(raw)
-                    action = msg.get("action")
-
-                    if action == "start":
-                        topic = msg.get("topic", "minimum wage")
-                        n_agents = max(5, min(50, msg.get("n_agents", 25)))
-                        game_mode = msg.get("game_mode", "sandbox")
-                        society_type = msg.get("society_type", "random")
-                        simulation.init_simulation(topic, n_agents, game_mode, society_type)
-                        simulation.is_running = True
-                        await broadcast_state(simulation.get_state_snapshot())
-
-                    elif action == "pause":
-                        simulation.is_running = False
-                        await broadcast_state(simulation.get_state_snapshot())
-
-                    elif action == "resume":
-                        simulation.is_running = True
-
-                    elif action == "broadcast":
-                        simulation.queue_broadcast(
-                            msg.get("message", ""),
-                            msg.get("target", "all"),
-                        )
-
-                    elif action == "inject":
-                        snapshot = simulation.sim_inject_agent(
-                            name=msg.get("name", "Injected Agent"),
-                            position=msg.get("position", 0.0),
-                            openness=msg.get("openness", 0.5),
-                            conformity=msg.get("conformity", 0.5),
-                            influence=msg.get("influence", 0.5),
-                        )
-                        await broadcast_state(snapshot)
-
-                    elif action == "sever":
-                        snapshot = simulation.sim_sever_connection(
-                            msg.get("agent_a_id", ""),
-                            msg.get("agent_b_id", ""),
-                        )
-                        await broadcast_state(snapshot)
-
-                    elif action == "speed":
-                        simulation.tick_duration_seconds = max(
-                            0.5, min(10.0, float(msg.get("tick_duration", 3.0)))
-                        )
-
-                except json.JSONDecodeError:
-                    pass
-
-        # Run both loops concurrently
-        tick_task = asyncio.create_task(tick_loop())
-        recv_task = asyncio.create_task(receive_loop())
-
-        done, pending = await asyncio.wait(
-            [tick_task, recv_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
-
-    except WebSocketDisconnect:
-        pass
-    finally:
-        connected_clients.discard(ws)

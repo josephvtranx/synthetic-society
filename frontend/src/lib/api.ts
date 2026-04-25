@@ -10,11 +10,12 @@ export type PopulateResponse = {
 export async function populateSociety(
   societyType: string = "polarized",
   nAgents: number = 25,
+  topic: string = "",
 ): Promise<PopulateResponse> {
   const res = await fetch(`${API_URL}/populate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ society_type: societyType, n_agents: nAgents }),
+    body: JSON.stringify({ society_type: societyType, n_agents: nAgents, topic }),
   });
 
   if (!res.ok) {

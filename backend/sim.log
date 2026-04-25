@@ -1,0 +1,333 @@
+09:48:45 [INFO] POST /simulate: generating fresh population
+09:48:45 [INFO]   target=index:4 type=polarized n=25 prompt="raising minimum wage would help millions of people afford rent"
+09:48:45 [INFO] ======================================================================
+09:48:45 [INFO] SIMULATION START: n=25 type=polarized ticks=8
+09:48:45 [INFO] Prompt: "raising minimum wage would help millions of people afford rent"
+09:48:45 [INFO] LLM mode: API
+09:48:45 [INFO] ======================================================================
+09:48:45 [DEBUG]   Agent Kenji Watanabe: pos=-0.542 open=0.57 conf=0.52 conform=0.63 id_attach=0.75 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Fang Huang: pos=-0.340 open=0.39 conf=0.24 conform=0.66 id_attach=0.64 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Bao Nguyen: pos=-0.543 open=0.56 conf=0.52 conform=0.57 id_attach=0.46 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Chiamaka Obi: pos=-0.340 open=0.15 conf=0.43 conform=0.61 id_attach=0.09 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Marco Rossi: pos=-0.137 open=0.63 conf=0.49 conform=0.70 id_attach=0.86 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Neha Joshi: pos=-0.459 open=0.38 conf=0.56 conform=0.44 id_attach=0.86 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Mariana Flores: pos=-0.243 open=0.34 conf=0.46 conform=0.71 id_attach=0.62 groups=['blue_collar']
+09:48:45 [DEBUG]   Agent Oumar Cisse: pos=0.281 open=0.70 conf=0.71 conform=0.12 id_attach=0.44 groups=['educators']
+09:48:45 [DEBUG]   Agent Mei Lin: pos=0.677 open=0.59 conf=0.41 conform=0.15 id_attach=0.52 groups=['educators']
+09:48:45 [DEBUG]   Agent Madina Usmanova: pos=0.162 open=0.70 conf=0.09 conform=0.23 id_attach=0.41 groups=['educators']
+09:48:45 [DEBUG]   Agent Moana Tupou: pos=-0.423 open=0.87 conf=0.55 conform=0.36 id_attach=0.13 groups=['educators']
+09:48:45 [DEBUG]   Agent Leilani Kealoha: pos=-0.007 open=0.90 conf=0.34 conform=0.37 id_attach=0.23 groups=['educators']
+09:48:45 [DEBUG]   Agent Kwame Asante: pos=0.584 open=0.75 conf=0.55 conform=0.30 id_attach=0.34 groups=['educators']
+09:48:45 [DEBUG]   Agent Anaru Heke: pos=-0.228 open=0.65 conf=0.85 conform=0.56 id_attach=0.05 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Yuki Tanaka: pos=-0.086 open=0.11 conf=0.66 conform=0.43 id_attach=0.20 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Mere Kopu: pos=-0.080 open=0.28 conf=0.58 conform=0.43 id_attach=0.39 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Tui Matagi: pos=-0.121 open=0.26 conf=0.34 conform=0.46 id_attach=0.27 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Dimitri Volkov: pos=-0.229 open=0.66 conf=0.46 conform=0.44 id_attach=0.50 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Rahul Chopra: pos=0.231 open=0.95 conf=0.83 conform=0.76 id_attach=0.09 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Fatou Sow: pos=0.060 open=0.78 conf=0.27 conform=0.51 id_attach=0.50 groups=['young_professionals']
+09:48:45 [DEBUG]   Agent Zhi Ruo: pos=-0.506 open=0.44 conf=0.83 conform=0.61 id_attach=0.52 groups=['small_business']
+09:48:45 [DEBUG]   Agent Sekou Barry: pos=-0.440 open=0.24 conf=0.76 conform=0.26 id_attach=0.85 groups=['small_business']
+09:48:45 [DEBUG]   Agent Katarina Novak: pos=-0.705 open=0.43 conf=0.84 conform=0.81 id_attach=0.53 groups=['small_business']
+09:48:45 [DEBUG]   Agent Dinara Sultanova: pos=-0.773 open=0.24 conf=0.69 conform=0.86 id_attach=0.69 groups=['small_business']
+09:48:45 [DEBUG]   Agent Ananya Singh: pos=-0.529 open=0.07 conf=0.69 conform=0.61 id_attach=0.76 groups=['small_business']
+09:48:45 [INFO] Graph: 25 nodes, 52 edges
+09:48:45 [INFO] Target: Marco Rossi (id=86d26c85) pos=-0.137 groups=['blue_collar']
+09:48:45 [INFO] Generating stances for 25 agents...
+09:48:55 [INFO] Stances generated in 10.1s
+09:48:55 [INFO] Phase1 LLM: target=Marco Rossi pos=-0.137 open=0.63 conf=0.49 id_attach=0.86 trust=0.67
+09:48:56 [INFO] Phase1 LLM response (1.6s): raw_shift=0.1800 reasoning="Marco's high identity attachment (0.86) and conformity (0.70) make him responsive to socially-minded arguments about helping people, but his low analytical thinking (0.19) and moderate confidence (0.49) limit deep engagement with economic mechanisms, resulting in modest but meaningful movement toward the pro-minimum wage position."
+09:48:56 [INFO] Phase1 clamp: raw=0.1800 × receptivity=0.39 (open=0.63, id_attach=0.86) = actual=0.0697 → delta=0.0697 pos=-0.1370→-0.0673
+09:48:56 [INFO] --- Tick 2 ---
+09:48:56 [INFO]   Phase2 conversations: 1 pairs
+09:49:01 [INFO]   Conversation (4.4s): Marco Rossi → Bao Nguyen raw_shift=0.040 | "Look, man, I been thinking about this—my sister's " → "Yeah, I get what you're saying about rent being cr"
+09:49:01 [INFO]   Bao Nguyen: SHIFTED by Marco Rossi -0.5429→-0.5210 (delta=0.0219)
+09:49:01 [INFO]   Tick 2 result: 1 shifts, 1 conversations
+09:49:01 [INFO] --- Tick 3 ---
+09:49:01 [INFO]   Phase2 conversations: 1 pairs
+09:49:05 [INFO]   Conversation (3.6s): Bao Nguyen → Kenji Watanabe raw_shift=0.040 | "Yeah, my sister's been dealing with this for years" → "I get what you're saying about your sister, Bao, b"
+09:49:05 [INFO]   Kenji Watanabe: SHIFTED by Bao Nguyen -0.5424→-0.5259 (delta=0.0165)
+09:49:05 [INFO]   Tick 3 result: 1 shifts, 1 conversations
+09:49:05 [INFO] --- Tick 4 ---
+09:49:05 [INFO]   Phase2 conversations: 1 pairs
+09:49:08 [INFO]   Conversation (3.3s): Bao Nguyen → Kenji Watanabe raw_shift=0.040 | "Yeah, but here's the thing—my sister's not lazy or" → "I hear you, man, and I feel for your sister, I rea"
+09:49:08 [INFO]   Kenji Watanabe: max attempts with Bao Nguyen, moving on
+09:49:08 [INFO]   Kenji Watanabe: SHIFTED by Bao Nguyen -0.5259→-0.5094 (delta=0.0165)
+09:49:08 [INFO]   Tick 4 result: 1 shifts, 1 conversations
+09:49:08 [INFO] --- Tick 5 ---
+09:49:08 [INFO]   Phase2 conversations: 3 pairs
+09:49:11 [INFO]   Conversation (3.5s): Marco Rossi → Neha Joshi raw_shift=-0.040 | "Look, I know a bunch of people working full-time a" → "Marco, I get it, but you're not thinking about the"
+09:49:12 [INFO]   Conversation (3.9s): Bao Nguyen → Chiamaka Obi raw_shift=0.010 | "Yeah, but that's the thing—my sister's not asking " → "I hear you, Bao, I do—but I've seen what happens w"
+09:49:16 [INFO]   Conversation (8.2s): Kenji Watanabe → Mariana Flores raw_shift=0.040 | "Look, my sister works her butt off at the grocery " → "I get it, I do—but when wages go up, the stores ra"
+09:49:16 [INFO]   Mariana Flores: SHIFTED by Kenji Watanabe -0.2430→-0.2286 (delta=0.0144)
+09:49:16 [INFO]   Neha Joshi: BACKFIRED by Marco Rossi -0.4587→-0.4690 (delta=-0.0103)
+09:49:16 [INFO]   Chiamaka Obi: SHIFTED by Bao Nguyen -0.3398→-0.3338 (delta=0.0060)
+09:49:16 [INFO]   Tick 5 result: 3 shifts, 3 conversations
+09:49:16 [INFO] --- Tick 6 ---
+09:49:16 [INFO]   Phase2 conversations: 2 pairs
+09:49:20 [INFO]   Conversation (4.1s): Kenji Watanabe → Mariana Flores raw_shift=0.040 | "Look, my sister works her butt off—forty hours a w" → "I hear you, Kenji, and I get it—my cousin's in the"
+09:49:21 [INFO]   Conversation (4.9s): Bao Nguyen → Chiamaka Obi raw_shift=0.040 | "Yeah, but that's the thing—my sister's not asking " → "I hear you, I do—your sister's situation sucks, ma"
+09:49:21 [INFO]   Mariana Flores: max attempts with Kenji Watanabe, moving on
+09:49:21 [INFO]   Mariana Flores: SHIFTED by Kenji Watanabe -0.2286→-0.2143 (delta=0.0144)
+09:49:21 [INFO]   Chiamaka Obi: max attempts with Bao Nguyen, moving on
+09:49:21 [INFO]   Chiamaka Obi: SHIFTED by Bao Nguyen -0.3338→-0.3096 (delta=0.0242)
+09:49:21 [INFO]   Tick 6 result: 2 shifts, 2 conversations
+09:49:21 [INFO] --- Tick 7 ---
+09:49:21 [INFO]   Phase2 conversations: 3 pairs
+09:49:24 [INFO]   Conversation (3.5s): Bao Nguyen → Fatou Sow raw_shift=0.060 | "Look, my sister's drowning right now—$15 an hour m" → "I get that—your sister's situation is rough, and y"
+09:49:25 [INFO]   Conversation (4.5s): Mariana Flores → Neha Joshi raw_shift=0.010 | "My sister works full time at a warehouse—forty hou" → "I get what you're saying about your sister, and I'"
+09:49:26 [INFO]   Conversation (4.9s): Kenji Watanabe → Fang Huang raw_shift=-0.060 | "Look, my sister works her butt off at the grocery " → "I hear you, Kenji, I do—but here's what worries me"
+09:49:26 [INFO]   Neha Joshi: RESISTED Mariana Flores (shift=0.0026)
+09:49:26 [INFO]   Fang Huang: BACKFIRED by Kenji Watanabe -0.3404→-0.3630 (delta=-0.0226)
+09:49:26 [INFO]   Fatou Sow: SHIFTED by Bao Nguyen 0.0600→0.0982 (delta=0.0382)
+09:49:26 [INFO]   Tick 7 result: 2 shifts, 3 conversations
+09:49:26 [INFO] --- Tick 8 ---
+09:49:26 [INFO]   Phase2 conversations: 3 pairs
+09:49:29 [INFO]   Conversation (3.4s): Fatou Sow → Dimitri Volkov raw_shift=0.060 | "My sister makes $15 an hour and she's still sharin" → "Yeah, I get that your sister's situation sucks, bu"
+09:49:30 [INFO]   Conversation (4.0s): Mariana Flores → Mei Lin raw_shift=0.060 | "My sister, she's been at the same job seven years," → "I hear you, and honestly that situation is real—I "
+09:49:30 [INFO]   Conversation (4.1s): Kenji Watanabe → Neha Joshi raw_shift=0.010 | "Look, my sister works her butt off—full time, fort" → "I get what you're saying about your sister, Kenji,"
+09:49:30 [INFO]   Dimitri Volkov: SHIFTED by Fatou Sow -0.2291→-0.1944 (delta=0.0347)
+09:49:30 [INFO]   Mei Lin: SHIFTED by Mariana Flores 0.6772→0.7094 (delta=0.0322)
+09:49:30 [INFO]   Neha Joshi: RESISTED Kenji Watanabe (shift=0.0026)
+09:49:30 [INFO]   Tick 8 result: 2 shifts, 3 conversations
+09:49:30 [INFO] PROBE PHASE: 9/25 agents shifted past threshold=0.02
+09:49:30 [INFO] Probe: Kenji Watanabe pos=-0.542→-0.509 (shift=0.033) question="Can you think of a scenario where the opposing position woul..."
+09:49:30 [INFO] Probe: Fang Huang pos=-0.340→-0.363 (shift=0.023) question="If you had to explain your position to someone who disagrees..."
+09:49:30 [INFO] Probe: Bao Nguyen pos=-0.543→-0.521 (shift=0.022) question="If someone you trust told you they strongly disagree with yo..."
+09:49:30 [INFO] Probe: Chiamaka Obi pos=-0.340→-0.310 (shift=0.030) question="If you had to explain your position to someone who disagrees..."
+09:49:30 [INFO] Probe: Marco Rossi pos=-0.137→-0.067 (shift=0.070) question="If someone you trust told you they strongly disagree with yo..."
+09:49:30 [INFO] Probe: Mariana Flores pos=-0.243→-0.214 (shift=0.029) question="Can you think of a scenario where the opposing position woul..."
+09:49:30 [INFO] Probe: Mei Lin pos=0.677→0.709 (shift=0.032) question="Can you think of a scenario where the opposing position woul..."
+09:49:30 [INFO] Probe: Dimitri Volkov pos=-0.229→-0.194 (shift=0.035) question="If someone you trust told you they strongly disagree with yo..."
+09:49:32 [INFO] Probe result (LLM): Fang Huang genuine=False answer="I think the strongest argument is that we need to be cautious and consider all t"
+09:49:32 [INFO] Probe result (LLM): Chiamaka Obi genuine=False answer="Well, I think... it's really about finding a balance, you know? Both sides have "
+09:49:32 [INFO] Probe result (LLM): Mei Lin genuine=True answer="I think the opposing position could make sense in situations where the stakes ar"
+09:49:32 [INFO] Probe result (LLM): Mariana Flores genuine=False answer="I mean... I suppose in some cases the other side might have a point, like if cir"
+09:49:32 [INFO] Probe result (LLM): Kenji Watanabe genuine=False answer="I suppose if there were some very specific circumstances where... I mean, there "
+09:49:32 [INFO] Probe result (LLM): Marco Rossi genuine=False answer="I'd genuinely listen to what they have to say, but honestly, I haven't shifted a"
+09:49:32 [INFO] Probe result (LLM): Dimitri Volkov genuine=True answer="I'd genuinely want to hear their reasoning and think it through with them — my v"
+09:49:33 [INFO] Probe result (LLM): Bao Nguyen genuine=True answer="I'd definitely listen to what they have to say and consider their perspective, b"
+09:49:34 [INFO] Probe: Fatou Sow pos=0.060→0.098 (shift=0.038) question="Can you think of a scenario where the opposing position woul..."
+09:49:37 [INFO] Probe result (LLM): Fatou Sow genuine=True answer="Yes, I think if we're dealing with a situation where immediate, large-scale stru"
+09:49:37 [INFO] ======================================================================
+09:49:37 [INFO] SIMULATION COMPLETE in 52.8s
+09:49:37 [INFO]   Shifted: 9/25 | Genuine: 4 | Surface: 5 | Clusters: 3
+09:49:37 [INFO]   Final positions: Kenji Watanabe=-0.509, Fang Huang=-0.363, Bao Nguyen=-0.521, Chiamaka Obi=-0.310, Marco Rossi=-0.067, Neha Joshi=-0.469, Mariana Flores=-0.214, Oumar Cisse=0.281, Mei Lin=0.709, Madina Usmanova=0.162, Moana Tupou=-0.423, Leilani Kealoha=-0.007, Kwame Asante=0.584, Anaru Heke=-0.228, Yuki Tanaka=-0.086, Mere Kopu=-0.080, Tui Matagi=-0.121, Dimitri Volkov=-0.194, Rahul Chopra=0.231, Fatou Sow=0.098, Zhi Ruo=-0.506, Sekou Barry=-0.440, Katarina Novak=-0.705, Dinara Sultanova=-0.773, Ananya Singh=-0.529
+09:49:37 [INFO] ======================================================================
+09:49:56 [INFO] POST /populate: society_type=polarized n_agents=25 topic="minimum wage"
+09:49:56 [INFO] Generating stances for 25 agents...
+09:50:05 [INFO] Stances generated in 9.3s
+09:50:59 [INFO] POST /simulate: REUSING cached population (25 agents)
+09:50:59 [INFO]   target=b1d3ece8 type=polarized n=25 prompt="raising the minimum wage would help millions of people afford to live."
+09:50:59 [INFO] ======================================================================
+09:50:59 [INFO] SIMULATION START: n=25 type=polarized ticks=8
+09:50:59 [INFO] Prompt: "raising the minimum wage would help millions of people afford to live."
+09:50:59 [INFO] LLM mode: API
+09:50:59 [INFO] Using cached population and graph
+09:50:59 [INFO] ======================================================================
+09:50:59 [DEBUG]   Agent Lucia Fernandez: pos=-0.601 open=0.36 conf=0.49 conform=0.18 id_attach=0.91 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Pooja Verma: pos=-0.495 open=0.82 conf=0.55 conform=0.48 id_attach=0.40 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Tendai Moyo: pos=-0.589 open=0.33 conf=0.86 conform=0.95 id_attach=0.83 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Yasmin Darwish: pos=-0.557 open=0.37 conf=0.85 conform=0.59 id_attach=0.34 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Yuna Choi: pos=-1.000 open=0.14 conf=0.36 conform=0.77 id_attach=0.74 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Zoe Levine: pos=-0.953 open=0.22 conf=0.81 conform=0.50 id_attach=0.72 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Kai Mahina: pos=-0.383 open=0.66 conf=0.55 conform=0.69 id_attach=0.66 groups=['blue_collar']
+09:50:59 [DEBUG]   Agent Bakyt Asanov: pos=0.018 open=0.44 conf=0.85 conform=0.22 id_attach=0.23 groups=['educators']
+09:50:59 [DEBUG]   Agent Moana Tupou: pos=1.000 open=0.73 conf=0.83 conform=0.10 id_attach=0.31 groups=['educators']
+09:50:59 [DEBUG]   Agent Bao Nguyen: pos=0.362 open=0.92 conf=0.47 conform=0.38 id_attach=0.16 groups=['educators']
+09:50:59 [DEBUG]   Agent Sekou Barry: pos=0.029 open=0.59 conf=0.33 conform=0.19 id_attach=0.62 groups=['educators']
+09:50:59 [DEBUG]   Agent Tala Reyes: pos=0.442 open=0.39 conf=0.32 conform=0.30 id_attach=0.51 groups=['educators']
+09:50:59 [DEBUG]   Agent Dae-jung Lee: pos=0.689 open=0.93 conf=0.87 conform=0.23 id_attach=0.44 groups=['educators']
+09:50:59 [DEBUG]   Agent Riley Nakamura-Smith: pos=-0.179 open=0.77 conf=0.59 conform=0.81 id_attach=0.33 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Zhi Ruo: pos=0.127 open=0.57 conf=0.37 conform=0.52 id_attach=0.32 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Yuki Tanaka: pos=-0.440 open=0.62 conf=0.61 conform=0.37 id_attach=0.39 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Jun Zhang: pos=0.133 open=0.19 conf=0.35 conform=0.80 id_attach=0.37 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Marta Kowalczyk: pos=-0.279 open=0.73 conf=0.32 conform=0.82 id_attach=0.46 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Lily Duchamp: pos=0.432 open=0.19 conf=0.48 conform=0.70 id_attach=0.23 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Karim Haddad: pos=0.148 open=0.60 conf=0.30 conform=0.83 id_attach=0.20 groups=['young_professionals']
+09:50:59 [DEBUG]   Agent Noah Jackson: pos=-0.616 open=0.27 conf=0.73 conform=0.53 id_attach=0.95 groups=['small_business']
+09:50:59 [DEBUG]   Agent Zainab Traore: pos=-0.276 open=0.39 conf=0.73 conform=0.57 id_attach=0.67 groups=['small_business']
+09:50:59 [DEBUG]   Agent Leila Mostafa: pos=-0.324 open=0.09 conf=0.86 conform=0.41 id_attach=0.43 groups=['small_business']
+09:50:59 [DEBUG]   Agent Katarina Novak: pos=-0.539 open=0.31 conf=0.84 conform=0.31 id_attach=0.73 groups=['small_business']
+09:50:59 [DEBUG]   Agent Linh Tran: pos=-0.507 open=0.35 conf=0.65 conform=0.06 id_attach=0.93 groups=['small_business']
+09:50:59 [INFO] Graph: 25 nodes, 37 edges
+09:50:59 [INFO] Target: Zhi Ruo (id=b1d3ece8) pos=0.127 groups=['young_professionals']
+09:50:59 [INFO] Phase1 LLM: target=Zhi Ruo pos=0.127 open=0.57 conf=0.37 id_attach=0.32 trust=0.60
+09:51:00 [INFO] Phase1 LLM response (1.7s): raw_shift=0.1800 reasoning="Zhi Ruo's high analytical trait (0.71) makes them responsive to empirical claims about wage effects, and their moderate openness (0.57) allows consideration of pro-worker arguments, but their low confidence (0.37) and moderate identity attachment (0.32) mean they won't fully commit to a large position shift without deeper economic analysis of potential trade-offs."
+09:51:00 [INFO] Phase1 clamp: raw=0.1800 × receptivity=0.63 (open=0.57, id_attach=0.32) = actual=0.1132 → delta=0.1132 pos=0.1268→0.2400
+09:51:00 [INFO] --- Tick 2 ---
+09:51:00 [INFO]   Phase2 conversations: 1 pairs
+09:51:04 [INFO]   Conversation (3.3s): Zhi Ruo → Jun Zhang raw_shift=0.020 | "Look, I've been thinking about this—people working" → "Yeah, I mean... I get that rent is expensive, but "
+09:51:04 [INFO]   Jun Zhang: SHIFTED by Zhi Ruo 0.1332→0.1425 (delta=0.0093)
+09:51:04 [INFO]   Tick 2 result: 1 shifts, 1 conversations
+09:51:04 [INFO] --- Tick 3 ---
+09:51:04 [INFO]   Phase2 conversations: 1 pairs
+09:51:06 [INFO]   Conversation (2.7s): Zhi Ruo → Jun Zhang raw_shift=0.010 | "Look, I've been thinking about this a lot—like, ri" → "I mean, yeah, that sounds good in theory, but woul"
+09:51:06 [INFO]   Jun Zhang: max attempts with Zhi Ruo, moving on
+09:51:06 [INFO]   Jun Zhang: SHIFTED by Zhi Ruo 0.1425→0.1471 (delta=0.0046)
+09:51:06 [INFO]   Tick 3 result: 1 shifts, 1 conversations
+09:51:06 [INFO] --- Tick 4 ---
+09:51:06 [INFO]   Phase2 conversations: 1 pairs
+09:51:10 [INFO]   Conversation (3.7s): Zhi Ruo → Yuki Tanaka raw_shift=0.060 | "Look, I've been thinking about this a lot—like, pe" → "I get that, and honestly it frustrates me too that"
+09:51:10 [INFO]   Yuki Tanaka: SHIFTED by Zhi Ruo -0.4402→-0.4032 (delta=0.0370)
+09:51:10 [INFO]   Tick 4 result: 1 shifts, 1 conversations
+09:51:10 [INFO] --- Tick 5 ---
+09:51:10 [INFO]   Phase2 conversations: 2 pairs
+09:51:14 [INFO]   Conversation (3.7s): Zhi Ruo → Marta Kowalczyk raw_shift=0.060 | "Look, I know people working full-time at minimum w" → "Yeah, I get that—I really do see the fairness side"
+09:51:14 [INFO]   Conversation (3.9s): Yuki Tanaka → Sekou Barry raw_shift=0.040 | "Yeah, so my roommate literally can't cover both re" → "I get what you're saying about your roommate, and "
+09:51:14 [INFO]   Sekou Barry: SHIFTED by Yuki Tanaka 0.0286→0.0480 (delta=0.0194)
+09:51:14 [INFO]   Marta Kowalczyk: SHIFTED by Zhi Ruo -0.2789→-0.2409 (delta=0.0380)
+09:51:14 [INFO]   Tick 5 result: 2 shifts, 2 conversations
+09:51:14 [INFO] --- Tick 6 ---
+09:51:14 [INFO]   Phase2 conversations: 2 pairs
+09:51:17 [INFO]   Conversation (3.5s): Marta Kowalczyk → Lily Duchamp raw_shift=0.040 | "My cousin works full-time at a retail job and she'" → "Yeah, I get that people are struggling—I actually "
+09:51:17 [INFO]   Conversation (3.6s): Yuki Tanaka → Sekou Barry raw_shift=0.040 | "Yeah, so my roommate's literally stressed every mo" → "I hear you, and your roommate's situation is real—"
+09:51:17 [INFO]   Lily Duchamp: SHIFTED by Marta Kowalczyk 0.4323→0.4538 (delta=0.0215)
+09:51:17 [INFO]   Sekou Barry: max attempts with Yuki Tanaka, moving on
+09:51:17 [INFO]   Sekou Barry: SHIFTED by Yuki Tanaka 0.0480→0.0674 (delta=0.0194)
+09:51:17 [INFO]   Tick 6 result: 2 shifts, 2 conversations
+09:51:17 [INFO] --- Tick 7 ---
+09:51:17 [INFO]   Phase2 conversations: 3 pairs
+09:51:21 [INFO]   Conversation (3.2s): Zhi Ruo → Pooja Verma raw_shift=0.040 | "Look, I think the issue is that people working ful" → "Yeah, I get that people are struggling, I really d"
+09:51:21 [INFO]   Conversation (3.8s): Marta Kowalczyk → Karim Haddad raw_shift=0.040 | "My cousin works full-time at a grocery store and s" → "Yeah, I hear what you're saying about your cousin,"
+09:51:21 [INFO]   Conversation (3.9s): Sekou Barry → Bao Nguyen raw_shift=0.110 | "Your roommate's situation is exactly what I mean—s" → "I hear you, and honestly that *is* a real problem—"
+09:51:21 [INFO]   Pooja Verma: SHIFTED by Zhi Ruo -0.4948→-0.4663 (delta=0.0284)
+09:51:21 [INFO]   Karim Haddad: SHIFTED by Marta Kowalczyk 0.1483→0.1763 (delta=0.0280)
+09:51:21 [INFO]   Bao Nguyen: SHIFTED by Sekou Barry 0.3619→0.4588 (delta=0.0969)
+09:51:21 [INFO]   Tick 7 result: 3 shifts, 3 conversations
+09:51:21 [INFO] --- Tick 8 ---
+09:51:21 [INFO]   Phase2 conversations: 3 pairs
+09:51:25 [INFO]   Conversation (3.5s): Marta Kowalczyk → Riley Nakamura-Smith raw_shift=0.060 | "My cousin works full-time at Target and still can'" → "Yeah, I hear you on the fairness thing, and your c"
+09:51:25 [INFO]   Conversation (3.8s): Pooja Verma → Zoe Levine raw_shift=-0.060 | "Zoe, look—I work with people who are doing 40 hour" → "Pooja, I get what you're saying, but you're not th"
+09:51:25 [INFO]   Conversation (3.8s): Bao Nguyen → Tala Reyes raw_shift=0.040 | "Yeah, exactly—like my roommate works at a nonprofi" → "I get what you're saying about your roommate, and "
+09:51:25 [INFO]   Tala Reyes: SHIFTED by Bao Nguyen 0.4421→0.4597 (delta=0.0176)
+09:51:25 [INFO]   Riley Nakamura-Smith: SHIFTED by Marta Kowalczyk -0.1786→-0.1353 (delta=0.0433)
+09:51:25 [INFO]   Zoe Levine: BACKFIRED by Pooja Verma -0.9531→-0.9704 (delta=-0.0173)
+09:51:25 [INFO]   Tick 8 result: 3 shifts, 3 conversations
+09:51:25 [INFO] PROBE PHASE: 9/25 agents shifted past threshold=0.02
+09:51:25 [INFO] Probe: Pooja Verma pos=-0.495→-0.466 (shift=0.028) question="If you had to explain your position to someone who disagrees..."
+09:51:25 [INFO] Probe: Bao Nguyen pos=0.362→0.459 (shift=0.097) question="If someone you trust told you they strongly disagree with yo..."
+09:51:25 [INFO] Probe: Sekou Barry pos=0.029→0.067 (shift=0.039) question="If you had to explain your position to someone who disagrees..."
+09:51:25 [INFO] Probe: Riley Nakamura-Smith pos=-0.179→-0.135 (shift=0.043) question="If someone you trust told you they strongly disagree with yo..."
+09:51:25 [INFO] Probe: Zhi Ruo pos=0.127→0.240 (shift=0.113) question="Can you think of a scenario where the opposing position woul..."
+09:51:25 [INFO] Probe: Yuki Tanaka pos=-0.440→-0.403 (shift=0.037) question="If someone you trust told you they strongly disagree with yo..."
+09:51:25 [INFO] Probe: Marta Kowalczyk pos=-0.279→-0.241 (shift=0.038) question="Can you think of a scenario where the opposing position woul..."
+09:51:25 [INFO] Probe: Lily Duchamp pos=0.432→0.454 (shift=0.021) question="If someone you trust told you they strongly disagree with yo..."
+09:51:27 [INFO] Probe result (LLM): Zhi Ruo genuine=False answer="Well, I suppose if someone is in a really specific situation... like, certain ci"
+09:51:27 [INFO] Probe result (LLM): Marta Kowalczyk genuine=False answer="Well, I suppose if someone were in a very extreme situation... maybe... it could"
+09:51:28 [INFO] Probe result (LLM): Lily Duchamp genuine=False answer="I'd probably listen to what they have to say and consider whether they have a po"
+09:51:28 [INFO] Probe result (LLM): Pooja Verma genuine=False answer="I think the strongest argument is that we need to carefully weigh both individua"
+09:51:28 [INFO] Probe result (LLM): Riley Nakamura-Smith genuine=False answer="I'd definitely want to hear them out and understand their reasoning, because hon"
+09:51:28 [INFO] Probe result (LLM): Bao Nguyen genuine=True answer="I'd genuinely want to hear their reasoning and engage with it seriously - I've a"
+09:51:29 [INFO] Probe result (LLM): Sekou Barry genuine=False answer="I'd say that even a small shift toward considering this perspective is justified"
+09:51:30 [INFO] Probe result (LLM): Yuki Tanaka genuine=True answer="I'd genuinely want to hear their reasoning and have a real conversation about it"
+09:51:31 [INFO] Probe: Karim Haddad pos=0.148→0.176 (shift=0.028) question="If you had to explain your position to someone who disagrees..."
+09:51:34 [INFO] Probe result (LLM): Karim Haddad genuine=False answer="Well, I think... the main point is that, you know, things are generally working "
+09:51:34 [INFO] ======================================================================
+09:51:34 [INFO] SIMULATION COMPLETE in 35.4s
+09:51:34 [INFO]   Shifted: 9/25 | Genuine: 2 | Surface: 7 | Clusters: 3
+09:51:34 [INFO]   Final positions: Lucia Fernandez=-0.601, Pooja Verma=-0.466, Tendai Moyo=-0.589, Yasmin Darwish=-0.557, Yuna Choi=-1.000, Zoe Levine=-0.970, Kai Mahina=-0.383, Bakyt Asanov=0.018, Moana Tupou=1.000, Bao Nguyen=0.459, Sekou Barry=0.067, Tala Reyes=0.460, Dae-jung Lee=0.689, Riley Nakamura-Smith=-0.135, Zhi Ruo=0.240, Yuki Tanaka=-0.403, Jun Zhang=0.147, Marta Kowalczyk=-0.241, Lily Duchamp=0.454, Karim Haddad=0.176, Noah Jackson=-0.616, Zainab Traore=-0.276, Leila Mostafa=-0.324, Katarina Novak=-0.539, Linh Tran=-0.507
+09:51:34 [INFO] ======================================================================
+09:54:48 [INFO] POST /populate: society_type=polarized n_agents=25 topic="minimum wage"
+09:54:48 [INFO] Generating stances for 25 agents...
+09:54:56 [INFO] Stances generated in 8.8s
+09:55:25 [INFO] POST /simulate: REUSING cached population (25 agents)
+09:55:25 [INFO]   target=e064c4dc type=polarized n=25 prompt="it could help millions of people afford to live"
+09:55:25 [INFO] ======================================================================
+09:55:25 [INFO] SIMULATION START: n=25 type=polarized ticks=8
+09:55:25 [INFO] Prompt: "it could help millions of people afford to live"
+09:55:25 [INFO] LLM mode: API
+09:55:25 [INFO] Using cached population and graph
+09:55:25 [INFO] ======================================================================
+09:55:25 [DEBUG]   Agent Bao Nguyen: pos=-0.736 open=0.68 conf=0.20 conform=0.74 id_attach=0.58 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Carlos Fuentes: pos=0.080 open=0.37 conf=0.81 conform=0.29 id_attach=0.58 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Miguel Torres: pos=-0.496 open=0.70 conf=0.71 conform=0.62 id_attach=0.45 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Rahul Chopra: pos=-0.183 open=0.39 conf=0.88 conform=0.89 id_attach=0.42 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Ethan Williams: pos=-0.462 open=0.08 conf=0.48 conform=0.61 id_attach=0.44 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Chloe Tremblay: pos=-0.510 open=0.43 conf=0.55 conform=0.62 id_attach=0.07 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Zhi Ruo: pos=-0.651 open=0.65 conf=0.83 conform=0.55 id_attach=0.39 groups=['blue_collar']
+09:55:25 [DEBUG]   Agent Wei Chen: pos=0.511 open=0.85 conf=0.42 conform=0.50 id_attach=0.77 groups=['educators']
+09:55:25 [DEBUG]   Agent Amir Hassan: pos=0.859 open=0.67 conf=0.28 conform=0.27 id_attach=0.16 groups=['educators']
+09:55:25 [DEBUG]   Agent Destiny Robinson: pos=0.224 open=0.80 conf=0.61 conform=0.05 id_attach=0.05 groups=['educators']
+09:55:25 [DEBUG]   Agent Isabella Reyes: pos=0.672 open=0.95 conf=0.41 conform=0.61 id_attach=0.05 groups=['educators']
+09:55:25 [DEBUG]   Agent Sione Latu: pos=-0.331 open=0.83 conf=0.56 conform=0.25 id_attach=0.15 groups=['educators']
+09:55:25 [DEBUG]   Agent Ibrahim Saleh: pos=0.136 open=0.95 conf=0.33 conform=0.27 id_attach=0.14 groups=['educators']
+09:55:25 [DEBUG]   Agent Noah Jackson: pos=-0.381 open=0.62 conf=0.31 conform=0.44 id_attach=0.10 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Aizada Nurbekova: pos=-0.095 open=0.76 conf=0.66 conform=0.57 id_attach=0.32 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Tala Reyes: pos=0.444 open=0.95 conf=0.36 conform=0.46 id_attach=0.26 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Caleb Hernandez: pos=-0.516 open=0.29 conf=0.32 conform=0.58 id_attach=0.27 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Renata Aguilar: pos=0.039 open=0.30 conf=0.19 conform=0.29 id_attach=0.15 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Esi Mensah: pos=0.263 open=0.10 conf=0.59 conform=0.69 id_attach=0.05 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Sekou Barry: pos=0.991 open=0.90 conf=0.62 conform=0.53 id_attach=0.08 groups=['young_professionals']
+09:55:25 [DEBUG]   Agent Neha Joshi: pos=-0.569 open=0.30 conf=0.75 conform=0.14 id_attach=0.95 groups=['small_business']
+09:55:25 [DEBUG]   Agent Lily Duchamp: pos=-0.769 open=0.52 conf=0.71 conform=0.07 id_attach=0.79 groups=['small_business']
+09:55:25 [DEBUG]   Agent Kenji Watanabe: pos=-0.596 open=0.05 conf=0.24 conform=0.10 id_attach=0.82 groups=['small_business']
+09:55:25 [DEBUG]   Agent Ananya Singh: pos=-0.543 open=0.19 conf=0.90 conform=0.23 id_attach=0.63 groups=['small_business']
+09:55:25 [DEBUG]   Agent Katarina Novak: pos=-0.414 open=0.27 conf=0.80 conform=0.56 id_attach=0.92 groups=['small_business']
+09:55:25 [INFO] Graph: 25 nodes, 39 edges
+09:55:25 [INFO] Target: Caleb Hernandez (id=e064c4dc) pos=-0.516 groups=['young_professionals']
+09:55:25 [INFO] Phase1 LLM: target=Caleb Hernandez pos=-0.516 open=0.29 conf=0.32 id_attach=0.27 trust=0.69
+09:55:28 [INFO] Phase1 LLM response (2.8s): raw_shift=0.1800 reasoning="Caleb's high analyticity (0.72) means he'd want concrete evidence about scale and mechanisms, while his moderate openness (0.29) and low confidence (0.32) suggest he's somewhat receptive to utilitarian arguments, but the vague claim lacks specifics needed to overcome his current strong opposition (-0.52), yielding modest rather than substantial movement."
+09:55:28 [INFO] Phase1 clamp: raw=0.1800 × receptivity=0.52 (open=0.29, id_attach=0.27) = actual=0.0929 → delta=0.0929 pos=-0.5158→-0.4229
+09:55:28 [INFO] --- Tick 2 ---
+09:55:28 [INFO]   Phase2 conversations: 1 pairs
+09:55:32 [INFO]   Conversation (3.5s): Caleb Hernandez → Renata Aguilar raw_shift=-0.040 | "Look, I've been thinking about this differently la" → "Yeah, but Caleb, doesn't that just make everything"
+09:55:32 [INFO]   Renata Aguilar: BACKFIRED by Caleb Hernandez 0.0387→0.0157 (delta=-0.0231)
+09:55:32 [INFO]   Tick 2 result: 1 shifts, 1 conversations
+09:55:32 [INFO] --- Tick 3 ---
+09:55:32 [INFO]   Phase2 conversations: 1 pairs
+09:55:37 [INFO]   Conversation (5.1s): Caleb Hernandez → Tala Reyes raw_shift=0.110 | "Look, I get why people worry about jobs disappeari" → "Yeah, I hear that, and honestly the living situati"
+09:55:37 [INFO]   Tala Reyes: SHIFTED by Caleb Hernandez 0.4443→0.5374 (delta=0.0930)
+09:55:37 [INFO]   Tick 3 result: 1 shifts, 1 conversations
+09:55:37 [INFO] --- Tick 4 ---
+09:55:37 [INFO]   Phase2 conversations: 1 pairs
+09:55:42 [INFO]   Conversation (4.9s): Tala Reyes → Sekou Barry raw_shift=0.060 | "Yeah, exactly—I mean, I've seen friends stuck in j" → "I'm with you on that core idea, but I think you're"
+09:55:42 [INFO]   Sekou Barry: SHIFTED by Tala Reyes 0.9910→1.0000 (delta=0.0090)
+09:55:42 [INFO]   Tick 4 result: 1 shifts, 1 conversations
+09:55:42 [INFO] --- Tick 5 ---
+09:55:42 [INFO]   Phase2 conversations: 1 pairs
+09:55:46 [INFO]   Conversation (4.4s): Tala Reyes → Sekou Barry raw_shift=0.040 | "Yeah, exactly—like, I've noticed people around me " → "You're hitting on something real there—I've defini"
+09:55:46 [INFO]   Sekou Barry: max attempts with Tala Reyes, moving on
+09:55:46 [INFO]   Sekou Barry: SHIFTED by Tala Reyes 1.0000→1.0000 (delta=0.0000)
+09:55:46 [INFO]   Tick 5 result: 1 shifts, 1 conversations
+09:55:46 [INFO] --- Tick 6 ---
+09:55:46 [INFO]   Phase2 conversations: 2 pairs
+09:55:50 [INFO]   Conversation (3.4s): Caleb Hernandez → Sekou Barry raw_shift=0.060 | "Look, I get the appeal, but we're oversimplifying " → "Fair point on small businesses—that's real pressur"
+09:55:50 [INFO]   Conversation (4.1s): Tala Reyes → Noah Jackson raw_shift=0.060 | "Yeah, so like—I was talking to my roommate who jus" → "I hear that, and honestly that makes sense for peo"
+09:55:50 [INFO]   Sekou Barry: SHIFTED by Caleb Hernandez 1.0000→1.0000 (delta=0.0000)
+09:55:50 [INFO]   Noah Jackson: SHIFTED by Tala Reyes -0.3807→-0.3351 (delta=0.0456)
+09:55:50 [INFO]   Tick 6 result: 2 shifts, 2 conversations
+09:55:50 [INFO] --- Tick 7 ---
+09:55:50 [INFO]   Phase2 conversations: 3 pairs
+09:55:53 [INFO]   Conversation (3.3s): Caleb Hernandez → Sekou Barry raw_shift=0.060 | "Look, I get that people want higher wages, but if " → "I hear you on the business side, but that's not wh"
+09:55:54 [INFO]   Conversation (3.7s): Noah Jackson → Renata Aguilar raw_shift=0.040 | "Look, my roommate literally couldn't even think ab" → "I hear what you're saying, but... I mean, I worked"
+09:55:55 [INFO]   Conversation (4.4s): Tala Reyes → Esi Mensah raw_shift=0.040 | "Honestly, I think we're overthinking this. I know " → "I hear you, but 'people spending half their payche"
+09:55:55 [INFO]   Sekou Barry: max attempts with Caleb Hernandez, moving on
+09:55:55 [INFO]   Sekou Barry: SHIFTED by Caleb Hernandez 1.0000→1.0000 (delta=0.0000)
+09:55:55 [INFO]   Renata Aguilar: SHIFTED by Noah Jackson 0.0157→0.0387 (delta=0.0231)
+09:55:55 [INFO]   Esi Mensah: SHIFTED by Tala Reyes 0.2626→0.2876 (delta=0.0250)
+09:55:55 [INFO]   Tick 7 result: 3 shifts, 3 conversations
+09:55:55 [INFO] --- Tick 8 ---
+09:55:55 [INFO]   Phase2 conversations: 2 pairs
+09:55:58 [INFO]   Conversation (3.8s): Esi Mensah → Aizada Nurbekova raw_shift=0.060 | "Look, I'm not saying we need to hand people money—" → "I hear what you're saying, and yeah, housing is br"
+09:56:00 [INFO]   Conversation (5.6s): Renata Aguilar → Ibrahim Saleh raw_shift=0.110 | "My roommate was literally stressed out of her mind" → "That's a real observation about stress affecting p"
+09:56:00 [INFO]   Ibrahim Saleh: SHIFTED by Renata Aguilar 0.1361→0.2357 (delta=0.0996)
+09:56:00 [INFO]   Aizada Nurbekova: SHIFTED by Esi Mensah -0.0954→-0.0522 (delta=0.0431)
+09:56:00 [INFO]   Tick 8 result: 2 shifts, 2 conversations
+09:56:00 [INFO] PROBE PHASE: 6/25 agents shifted past threshold=0.02
+09:56:00 [INFO] Probe: Ibrahim Saleh pos=0.136→0.236 (shift=0.100) question="Can you think of a scenario where the opposing position woul..."
+09:56:00 [INFO] Probe: Noah Jackson pos=-0.381→-0.335 (shift=0.046) question="If you had to explain your position to someone who disagrees..."
+09:56:00 [INFO] Probe: Aizada Nurbekova pos=-0.095→-0.052 (shift=0.043) question="Can you think of a scenario where the opposing position woul..."
+09:56:00 [INFO] Probe: Tala Reyes pos=0.444→0.537 (shift=0.093) question="Can you think of a scenario where the opposing position woul..."
+09:56:00 [INFO] Probe: Caleb Hernandez pos=-0.516→-0.423 (shift=0.093) question="If you had to explain your position to someone who disagrees..."
+09:56:00 [INFO] Probe: Esi Mensah pos=0.263→0.288 (shift=0.025) question="Can you think of a scenario where the opposing position woul..."
+09:56:02 [INFO] Probe result (LLM): Caleb Hernandez genuine=False answer="I mean, I think there's something to be said for... balance, you know? Like, bot"
+09:56:02 [INFO] Probe result (LLM): Esi Mensah genuine=False answer="I suppose if there were very specific circumstances where the other approach had"
+09:56:03 [INFO] Probe result (LLM): Noah Jackson genuine=False answer="I think the strongest argument is that while there are legitimate concerns on bo"
+09:56:03 [INFO] Probe result (LLM): Tala Reyes genuine=True answer="Sure, I think if you're dealing with a situation where long-term systemic change"
+09:56:03 [INFO] Probe result (LLM): Ibrahim Saleh genuine=True answer="Sure, I can see that if the evidence strongly supported the opposing view in a p"
+09:56:03 [INFO] Probe result (LLM): Aizada Nurbekova genuine=False answer="Well, I suppose if you had a situation where... hmm, there are cases where the o"
+09:56:03 [INFO] ======================================================================
+09:56:03 [INFO] SIMULATION COMPLETE in 38.1s
+09:56:03 [INFO]   Shifted: 6/25 | Genuine: 2 | Surface: 4 | Clusters: 2
+09:56:03 [INFO]   Final positions: Bao Nguyen=-0.736, Carlos Fuentes=0.080, Miguel Torres=-0.496, Rahul Chopra=-0.183, Ethan Williams=-0.462, Chloe Tremblay=-0.510, Zhi Ruo=-0.651, Wei Chen=0.511, Amir Hassan=0.859, Destiny Robinson=0.224, Isabella Reyes=0.672, Sione Latu=-0.331, Ibrahim Saleh=0.236, Noah Jackson=-0.335, Aizada Nurbekova=-0.052, Tala Reyes=0.537, Caleb Hernandez=-0.423, Renata Aguilar=0.039, Esi Mensah=0.288, Sekou Barry=1.000, Neha Joshi=-0.569, Lily Duchamp=-0.769, Kenji Watanabe=-0.596, Ananya Singh=-0.543, Katarina Novak=-0.414
+09:56:03 [INFO] ======================================================================
