@@ -1,21 +1,31 @@
 import { create } from "zustand";
 import type { SimState, AgentData } from "./types";
-import { MOCK_STATE } from "./mock-data";
+
+const EMPTY_STATE: SimState = {
+  tick: 0,
+  agents: [],
+  edges: [],
+  active_conversations: [],
+  recent_events: [],
+  stats: { mean_position: 0, std_position: 0, polarization_index: 0, tick: 0 },
+  win_progress: 0,
+  game_mode: "sandbox",
+  is_running: false,
+  has_converged: false,
+};
 
 type SimStore = {
-  // State
   state: SimState;
   selectedAgentId: string | null;
   connected: boolean;
 
-  // Actions
   setState: (state: SimState) => void;
   selectAgent: (id: string | null) => void;
   setConnected: (connected: boolean) => void;
 };
 
 export const useSimStore = create<SimStore>((set) => ({
-  state: MOCK_STATE,
+  state: EMPTY_STATE,
   selectedAgentId: null,
   connected: false,
 

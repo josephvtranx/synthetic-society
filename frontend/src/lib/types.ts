@@ -3,8 +3,13 @@
 export type AgentData = {
   id: string;
   name: string;
+  age?: number;
   position: number; // -1.0 to 1.0
   confidence: number; // 0-1
+  openness?: number;
+  analytical?: number;
+  conformity?: number;
+  agreeableness?: number;
   influence_score: number; // 0-1
   identity_attachment: number; // 0-1
   x: number;
@@ -25,8 +30,12 @@ export type EdgeData = {
 export type ConversationEvent = {
   agent_a_id: string;
   agent_b_id: string;
+  agent_a_name?: string;
+  agent_b_name?: string;
   agent_a_statement: string;
   agent_b_statement: string;
+  shift_a?: number;
+  shift_b?: number;
 };
 
 export type SimStats = {
@@ -46,9 +55,5 @@ export type SimState = {
   win_progress: number;
   game_mode: string;
   is_running: boolean;
-};
-
-export type PlayerAction = {
-  message: string;
-  target: "all" | string;
+  has_converged?: boolean;
 };

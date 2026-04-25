@@ -1,6 +1,5 @@
 """
 NetworkX graph management for the society simulation.
-Owner: Person B
 """
 
 import random
@@ -12,17 +11,16 @@ from agent import Agent
 def create_society_graph(agents: dict[str, Agent]) -> nx.Graph:
     """
     Create a Watts-Strogatz small-world graph and map nodes to agent IDs.
-    Returns: NetworkX Graph with agent IDs as nodes and edge weights = 0.5.
+    Returns: NetworkX Graph with agent IDs as nodes and random edge weights.
     """
     n_agents = len(agents)
-
     if n_agents == 0:
         return nx.Graph()
 
-    # Watts-Strogatz requires an even k where 0 <= k < n.
     k = min(6, n_agents - 1)
     if k % 2 == 1:
         k -= 1
+    k = max(2, k)
 
     base_graph = nx.watts_strogatz_graph(n=n_agents, k=k, p=0.1)
 
@@ -31,7 +29,8 @@ def create_society_graph(agents: dict[str, Agent]) -> nx.Graph:
     graph = nx.relabel_nodes(base_graph, mapping)
 
     for source, target in graph.edges():
-        graph[source][target]["weight"] = random.uniform(0.1, 1.0)
+        graph[source][target]["weight"] = round(random.uniform(0.2, 0.8), 2)
+
     return graph
 
 
@@ -44,17 +43,36 @@ def get_interaction_pairs(
     Select n_pairs connected agent pairs, weighted by edge weight.
     Returns: list of (agent_a, agent_b) tuples.
     """
-    # TODO [B2]: Implement
-    # 1. Get all edges with weights
-    # 2. Sample n_pairs edges weighted by edge weight
-    # 3. Look up Agent objects and return as tuples
-    raise NotImplementedError("TODO [B2]")
+    edges = list(G.edges(data=True))
+    if not edges:
+        return []
+
+    weights = [d.get("weight", 0.5) for _, _, d in edges]
+    n_pairs = min(n_pairs, len(edges))
+
+    chosen_indices = random.choices(range(len(edges)), weights=weights, k=n_pairs)
+    # Deduplicate by index
+    seen = set()
+    unique_indices = []
+    for idx in chosen_indices:
+        if idx not in seen:
+            seen.add(idx)
+            unique_indices.append(idx)
+
+    pairs = []
+    for idx in unique_indices:
+        src, tgt, _ = edges[idx]
+        if src in agents and tgt in agents:
+            pairs.append((agents[src], agents[tgt]))
+
+    return pairs
 
 
 def update_edge_weight(G: nx.Graph, agent_a_id: str, agent_b_id: str) -> None:
     """Increase edge weight by 0.05 after interaction, cap at 1.0."""
-    # TODO [B3]: Implement
-    raise NotImplementedError("TODO [B3]")
+    if G.has_edge(agent_a_id, agent_b_id):
+        w = G[agent_a_id][agent_b_id].get("weight", 0.5)
+        G[agent_a_id][agent_b_id]["weight"] = min(1.0, w + 0.05)
 
 
 def get_peer_average_position(
@@ -63,8 +81,13 @@ def get_peer_average_position(
     agents: dict[str, Agent],
 ) -> float:
     """Return mean position of all graph neighbors of agent_id."""
-    # TODO [B3]: Implement
-    raise NotImplementedError("TODO [B3]")
+    neighbors = list(G.neighbors(agent_id))
+    if not neighbors:
+        return 0.0
+    positions = [agents[n].position for n in neighbors if n in agents]
+    if not positions:
+        return 0.0
+    return sum(positions) / len(positions)
 
 
 def apply_homophily_drift(
@@ -75,19 +98,41 @@ def apply_homophily_drift(
     """
     Called every 10 ticks. Reshape the network based on belief similarity.
     """
-    # TODO [B4]: Implement
-    # 1. For each edge: increase weight if agents have similar positions,
-    #    decrease if dissimilar
-    # 2. Remove edges that drop below 0.1
-    # 3. Occasionally add edges between unconnected agents who share a
-    #    group_id and have similar positions
-    raise NotImplementedError("TODO [B4]")
+    edges_to_remove = []
+    for u, v, data in list(G.edges(data=True)):
+        if u not in agents or v not in agents:
+            continue
+        w = data.get("weight", 0.5)
+        diff = abs(agents[u].position - agents[v].position)
+        if diff < 0.3:
+            w += rate
+        elif diff > 0.7:
+            w -= rate * 2
+        else:
+            w -= rate * 0.5
+        w = max(0.0, min(1.0, w))
+        if w < 0.1:
+            edges_to_remove.append((u, v))
+        else:
+            G[u][v]["weight"] = w
+
+    for u, v in edges_to_remove:
+        G.remove_edge(u, v)
+
+    # Occasionally add edges between similar unconnected agents
+    agent_ids = list(agents.keys())
+    for _ in range(min(3, len(agent_ids) // 5)):
+        a, b = random.sample(agent_ids, 2)
+        if not G.has_edge(a, b) and abs(agents[a].position - agents[b].position) < 0.2:
+            shared = set(agents[a].group_ids) & set(agents[b].group_ids)
+            if shared and random.random() < 0.3:
+                G.add_edge(a, b, weight=0.3)
 
 
 def sever_connection(G: nx.Graph, agent_a_id: str, agent_b_id: str) -> None:
     """Remove edge between two agents if it exists."""
-    # TODO [B5]: Implement
-    raise NotImplementedError("TODO [B5]")
+    if G.has_edge(agent_a_id, agent_b_id):
+        G.remove_edge(agent_a_id, agent_b_id)
 
 
 def inject_agent(
@@ -110,4 +155,4 @@ def inject_agent(
     neighbors = random.sample(candidates, k=n_connections)
 
     for neighbor_id in neighbors:
-        G.add_edge(new_agent.id, neighbor_id, weight=random.uniform(0.1, 1.0))
+        G.add_edge(new_agent.id, neighbor_id, weight=round(random.uniform(0.3, 0.7), 2))

@@ -1,6 +1,5 @@
 """
 Agent dataclass and population generation for Society Simulator.
-Owner: Person A
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +10,6 @@ import numpy as np
 
 
 # ── Name pool (200+ names, diverse cultural backgrounds) ──────────────────────
-# TODO [A3]: Expand to 200+ names spanning many cultural backgrounds
 NAMES = [
     # East Asian
     "Wei Chen", "Yuki Tanaka", "Min-jun Park", "Mei Lin", "Hiroshi Sato",
@@ -99,8 +97,13 @@ class Agent:
         return {
             "id": self.id,
             "name": self.name,
+            "age": self.age,
             "position": self.position,
             "confidence": self.confidence,
+            "openness": self.openness,
+            "analytical": self.analytical,
+            "conformity": self.conformity,
+            "agreeableness": self.agreeableness,
             "influence_score": self.influence_score,
             "identity_attachment": self.identity_attachment,
             "x": self.x,
@@ -123,16 +126,38 @@ def update_belief(
     Update agent's belief position based on an argument from source_agent.
     Returns abs(final_delta) — the magnitude of the shift.
     """
-    # TODO [A2]: Implement the full belief update formula
-    # 1. Compute arg_quality from logic/emotion/evidence weighted by agent.analytical
-    # 2. Compute credibility from source influence * group similarity
-    # 3. Compute elaboration = openness * (1 - identity_attachment)
-    # 4. If elaboration > 0.5: central route (arg_quality * credibility * openness)
-    #    Else: peripheral route (peer_pressure * conformity)
-    # 5. Apply final_delta with confidence and resistance dampening
-    # 6. Clamp position to [-1, 1]
-    # 7. Bump confidence if shift > 0.05
-    raise NotImplementedError("TODO [A2]")
+    arg_quality = (
+        argument_scores["logic"] * agent.analytical
+        + argument_scores["emotion"] * (1 - agent.analytical)
+        + argument_scores["evidence"] * 0.3
+    ) / 1.3
+
+    similarity = len(set(agent.group_ids) & set(source_agent.group_ids)) / max(len(agent.group_ids), 1)
+    credibility = source_agent.influence_score * (0.5 + 0.5 * similarity)
+
+    elaboration = agent.openness * (1 - agent.identity_attachment)
+
+    if elaboration > 0.5:
+        # Central route: engage with the argument
+        raw_delta = arg_quality * credibility * agent.openness
+        direction = 1 if source_agent.position > agent.position else -1
+        raw_delta *= direction
+    else:
+        # Peripheral route: follow the crowd
+        peer_pressure = peer_avg_position - agent.position
+        raw_delta = peer_pressure * agent.conformity
+
+    final_delta = raw_delta * (1 - agent.confidence)
+    resistance = agent.identity_attachment * 0.5
+    final_delta *= (1 - resistance)
+
+    agent.position += final_delta
+    agent.position = max(-1.0, min(1.0, agent.position))
+
+    if abs(final_delta) > 0.05:
+        agent.confidence = min(1.0, agent.confidence + 0.02)
+
+    return abs(final_delta)
 
 
 def generate_population(
@@ -145,18 +170,66 @@ def generate_population(
     society_type: "polarized" | "consensus" | "random"
     Returns: dict mapping agent_id -> Agent
     """
-    # TODO [A3]: Implement population generation
-    # 1. Sample n names without replacement from NAMES pool
-    # 2. Generate personality traits from Beta distributions:
-    #    openness ~ Beta(2.5, 2.0), analytical ~ Beta(2.0, 2.0),
-    #    conformity ~ Beta(2.0, 2.5), agreeableness ~ Beta(3.0, 2.0),
-    #    influence_score ~ Beta(1.5, 4.0), identity_attachment ~ Beta(1.5, 3.0),
-    #    confidence ~ Beta(2.5, 2.0)
-    # 3. Generate positions based on society_type:
-    #    "polarized": bimodal (Beta(6,2) scaled to [-1,0] and [0,1])
-    #    "consensus": Beta(5,5) scaled to [-0.3, 0.3]
-    #    "random": uniform [-1, 1]
-    # 4. Assign group_ids from AGE_GROUPS, LOCALE_GROUPS, EDUCATION_GROUPS
-    # 5. Random x, y in [0.05, 0.95]; target = initial position
-    # 6. Set starting_position = position
-    raise NotImplementedError("TODO [A3]")
+    names = random.sample(NAMES, min(n, len(NAMES)))
+    if n > len(NAMES):
+        for i in range(n - len(NAMES)):
+            names.append(f"Agent_{i}")
+
+    agents = {}
+    for i in range(n):
+        agent_id = str(uuid.uuid4())[:8]
+
+        # Personality traits from Beta distributions
+        openness = float(np.random.beta(2.5, 2.0))
+        analytical = float(np.random.beta(2.0, 2.0))
+        conformity = float(np.random.beta(2.0, 2.5))
+        agreeableness = float(np.random.beta(3.0, 2.0))
+        influence_score = float(np.random.beta(1.5, 4.0))
+        identity_attachment = float(np.random.beta(1.5, 3.0))
+        confidence = float(np.random.beta(2.5, 2.0))
+
+        # Position based on society type
+        if society_type == "polarized":
+            if random.random() < 0.5:
+                position = -float(np.random.beta(6, 2))
+            else:
+                position = float(np.random.beta(6, 2))
+        elif society_type == "consensus":
+            position = float(np.random.beta(5, 5)) * 0.6 - 0.3
+        else:  # random
+            position = random.uniform(-1.0, 1.0)
+
+        # Demographics
+        age = random.randint(18, 75)
+        group_ids = [
+            random.choice(AGE_GROUPS),
+            random.choice(LOCALE_GROUPS),
+            random.choice(EDUCATION_GROUPS),
+        ]
+
+        # Spatial position
+        x = random.uniform(0.05, 0.95)
+        y = random.uniform(0.05, 0.95)
+
+        agent = Agent(
+            id=agent_id,
+            name=names[i],
+            age=age,
+            openness=openness,
+            analytical=analytical,
+            conformity=conformity,
+            agreeableness=agreeableness,
+            influence_score=influence_score,
+            group_ids=group_ids,
+            position=position,
+            confidence=confidence,
+            identity_attachment=identity_attachment,
+            x=x,
+            y=y,
+            target_x=x,
+            target_y=y,
+            starting_position=position,
+        )
+        agents[agent_id] = agent
+
+    return agents
