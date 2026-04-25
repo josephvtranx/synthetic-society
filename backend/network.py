@@ -14,12 +14,25 @@ def create_society_graph(agents: dict[str, Agent]) -> nx.Graph:
     Create a Watts-Strogatz small-world graph and map nodes to agent IDs.
     Returns: NetworkX Graph with agent IDs as nodes and edge weights = 0.5.
     """
-    # TODO [B1]: Implement
-    # 1. Create nx.watts_strogatz_graph(n=len(agents), k=6, p=0.1)
-    # 2. Map integer node indices to agent IDs
-    # 3. Set all edge weights to 0.5
-    # 4. Return the relabeled graph
-    raise NotImplementedError("TODO [B1]")
+    n_agents = len(agents)
+
+    if n_agents == 0:
+        return nx.Graph()
+
+    # Watts-Strogatz requires an even k where 0 <= k < n.
+    k = min(6, n_agents - 1)
+    if k % 2 == 1:
+        k -= 1
+
+    base_graph = nx.watts_strogatz_graph(n=n_agents, k=k, p=0.1)
+
+    agent_ids = list(agents.keys())
+    mapping = {index: agent_id for index, agent_id in enumerate(agent_ids)}
+    graph = nx.relabel_nodes(base_graph, mapping)
+
+    for source, target in graph.edges():
+        graph[source][target]["weight"] = random.uniform(0.1, 1.0)
+    return graph
 
 
 def get_interaction_pairs(
@@ -82,6 +95,19 @@ def inject_agent(
     new_agent: Agent,
     existing_agent_ids: list[str],
 ) -> None:
-    """Add a new agent node and connect to 4 random existing agents with weight 0.5."""
-    # TODO [B5]: Implement
-    raise NotImplementedError("TODO [B5]")
+    """Add a new node and connect it to up to 4 random existing agents."""
+    G.add_node(new_agent.id)
+
+    candidates = [
+        agent_id
+        for agent_id in existing_agent_ids
+        if agent_id != new_agent.id and G.has_node(agent_id)
+    ]
+    if not candidates:
+        return
+
+    n_connections = min(4, len(candidates))
+    neighbors = random.sample(candidates, k=n_connections)
+
+    for neighbor_id in neighbors:
+        G.add_edge(new_agent.id, neighbor_id, weight=random.uniform(0.1, 1.0))
