@@ -35,7 +35,7 @@ export default function AgentPanel() {
   const allAgents = useCurrentAgents();
 
   const mono = { fontFamily: "'Courier New', monospace" };
-  const nameById = (id: string) => allAgents.find((a) => a.id === id)?.name?.split(" ")[0] ?? id.slice(0, 6);
+  const nameById = (id: string) => id === "player" ? "You" : allAgents.find((a) => a.id === id)?.name?.split(" ")[0] ?? id.slice(0, 6);
 
   if (!agent) {
     return (

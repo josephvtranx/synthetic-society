@@ -37,8 +37,7 @@ _cached_stances: dict[str, str] = {}
 
 class SimulateRequest(BaseModel):
     prompt: str
-    target_agent_id: str = ""
-    target_index: int = 0
+    target_agent_ids: list[str] = []
     society_type: str = "polarized"
     n_agents: int = 25
 
@@ -110,7 +109,7 @@ async def simulate(req: SimulateRequest):
     use_cache = (
         _cached_agents
         and _cached_graph is not None
-        and (req.target_agent_id in _cached_agents or req.target_index < len(_cached_agents))
+        and all(tid in _cached_agents for tid in req.target_agent_ids)
     )
 
     if use_cache:
@@ -118,12 +117,11 @@ async def simulate(req: SimulateRequest):
     else:
         logger.info(f"POST /simulate: generating fresh population")
 
-    logger.info(f"  target={req.target_agent_id or f'index:{req.target_index}'} type={req.society_type} n={req.n_agents} prompt=\"{req.prompt[:80]}\"")
+    logger.info(f"  targets={req.target_agent_ids} type={req.society_type} n={req.n_agents} prompt=\"{req.prompt[:80]}\"")
 
     result = await run_simulation(
         prompt=req.prompt,
-        target_agent_id=req.target_agent_id,
-        target_index=req.target_index,
+        target_agent_ids=req.target_agent_ids,
         society_type=req.society_type,
         n_agents=max(5, min(50, req.n_agents)),
         agents=_cached_agents if use_cache else None,

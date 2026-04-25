@@ -66,7 +66,7 @@ export type ProbeResult = {
 
 // Full timeline returned by backend after sim runs
 export type SimTimeline = {
-  target_agent_id: string;
+  target_agent_ids: string[];
   edges: EdgeData[];
   ticks: TickSnapshot[];
   conversations: Conversation[];
@@ -82,8 +82,7 @@ export type SimTimeline = {
 // What the player submits
 export type PlayerInjection = {
   prompt: string;
-  target_agent_id: string;
-  target_index: number;
+  target_agent_ids: string[];
   society_type: "polarized" | "consensus" | "random";
   n_agents: number;
 };

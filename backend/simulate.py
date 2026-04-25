@@ -154,14 +154,15 @@ async def generate_all_stances(agents: dict[str, Agent], topic: str) -> dict[str
 
 # ── Phase 1: Direct persuasion (LLM) ──────────────────────────────────────
 
-async def phase1_direct_persuasion(
+async def phase1_evaluate_argument(
     agent: Agent,
     prompt: str,
     source_trust: float,
-) -> float:
+) -> tuple[float, str]:
     """
-    LLM evaluates how the targeted agent responds to the player's argument.
-    Returns the raw belief shift before clamping.
+    LLM evaluates how well the argument resonates with this specific person.
+    Returns (argument_quality 0-1, reasoning).
+    The LLM judges argument-person FIT, not shift magnitude — that comes from the formula.
     """
     client = _get_client()
     logger.info(f"Phase1 LLM: target={agent.name} pos={agent.position:.3f} open={agent.openness:.2f} conf={agent.confidence:.2f} id_attach={agent.identity_attachment:.2f} trust={source_trust:.2f}")
@@ -173,14 +174,19 @@ async def phase1_direct_persuasion(
                 model=FAST_MODEL,
                 max_tokens=150,
                 system=(
-                    "You are simulating a real person's internal reaction to an argument. "
-                    "Given their personality and current belief, estimate how much their "
-                    "position would shift. Use the FULL range: 0.3-0.5 for a compelling argument "
-                    "to a receptive person, 0.1-0.3 for moderate impact, 0.01-0.1 for minimal impact. "
-                    "Negative values mean the argument backfired. Consider: would this specific "
-                    "argument resonate with THIS person's values and thinking style? "
-                    "Return ONLY valid JSON: "
-                    '{"raw_shift": float between -0.5 and 0.5, "reasoning": "one sentence"}'
+                    "You are evaluating how well an argument resonates with a specific person. "
+                    "Consider: does this argument address their values, concerns, and thinking style? "
+                    "Would it make them THINK, even if they don't agree? "
+                    "\n\nRate the ARGUMENT-PERSON FIT on 0.0-1.0:"
+                    "\n  0.0-0.2: argument is irrelevant, offensive, or completely mismatched to their worldview"
+                    "\n  0.2-0.4: argument has some merit but doesn't address their core concerns"
+                    "\n  0.4-0.6: argument makes a point they'd consider, touches something they care about"
+                    "\n  0.6-0.8: argument is compelling and speaks to their specific values/experience"
+                    "\n  0.8-1.0: argument is perfectly tailored — addresses exactly what matters to this person"
+                    "\n\nThis is about FIT, not persuasion. A great argument to the wrong person scores low. "
+                    "A simple argument that speaks to someone's lived experience scores high."
+                    "\n\nReturn ONLY valid JSON: "
+                    '{"argument_quality": float 0.0-1.0, "reasoning": "one sentence"}'
                 ),
                 messages=[{
                     "role": "user",
@@ -197,10 +203,10 @@ async def phase1_direct_persuasion(
             elapsed = time.time() - t0
             raw_text = response.content[0].text
             result = _extract_json(raw_text)
-            raw = float(result.get("raw_shift", 0.0))
+            quality = max(0.0, min(1.0, float(result.get("argument_quality", 0.3))))
             reasoning = result.get("reasoning", "")
-            logger.info(f"Phase1 LLM response ({elapsed:.1f}s): raw_shift={raw:.4f} reasoning=\"{reasoning}\"")
-            return max(-0.5, min(0.5, raw))
+            logger.info(f"Phase1 LLM response ({elapsed:.1f}s): argument_quality={quality:.3f} reasoning=\"{reasoning}\"")
+            return quality, reasoning
         except Exception as e:
             raw_text = ""
             try:
@@ -209,34 +215,92 @@ async def phase1_direct_persuasion(
                 pass
             logger.error(f"Phase1 LLM error: {e} | raw response: {raw_text}")
 
-    direction = 1 if random.random() > 0.5 else -1
-    raw = random.uniform(0.35, 0.5) * direction
-    logger.info(f"Phase1 DEMO: raw_shift={raw:.4f}")
-    return raw
+    quality = random.uniform(0.3, 0.7)
+    logger.info(f"Phase1 DEMO: argument_quality={quality:.3f}")
+    return quality, "demo fallback"
+
+
+async def _generate_phase1_response(
+    agent: Agent, prompt: str, shift: float, topic: str,
+) -> str:
+    """Generate the target agent's verbal reaction to the player's argument."""
+    client = _get_client()
+
+    if shift >= 0.05:
+        outcome_desc = "The listener is genuinely considering the argument — they push back on some points but concede others."
+    elif shift >= 0.02:
+        outcome_desc = "The listener is slightly intrigued but mostly skeptical — they raise counterpoints but show a crack of openness."
+    else:
+        outcome_desc = "The listener is largely unmoved — they acknowledge hearing it but deflect, push back, or dismiss it."
+
+    if client:
+        try:
+            t0 = time.time()
+            response = await client.messages.create(
+                model=FAST_MODEL,
+                max_tokens=200,
+                system=(
+                    f"You are {agent.name}, age {agent.age}, a {agent.group_ids[0]}. "
+                    f"Someone just told you: \"{prompt}\"\n"
+                    f"Your current position on {topic}: {agent.position:.2f} "
+                    f"(-1=strongly against, +1=strongly for).\n"
+                    f"Openness: {agent.openness:.2f}, Confidence: {agent.confidence:.2f}, "
+                    f"Identity attachment: {agent.identity_attachment:.2f}.\n\n"
+                    f"OUTCOME: {outcome_desc}\n\n"
+                    "Respond in 1-3 sentences, in character, as yourself. "
+                    "Return ONLY your spoken response, no JSON, no quotes."
+                ),
+                messages=[{"role": "user", "content": prompt}],
+            )
+            elapsed = time.time() - t0
+            text = response.content[0].text.strip().strip('"')
+            logger.info(f"Phase1 response ({elapsed:.1f}s): \"{text[:80]}\"")
+            return text
+        except Exception as e:
+            logger.error(f"Phase1 response generation error: {e}")
+
+    if shift >= 0.02:
+        return f"Hm, that's an interesting point. I'm not sure I fully agree, but I hear you."
+    else:
+        return f"I don't know about that. I see it differently."
 
 
 async def run_phase1(
     agent: Agent,
     prompt: str,
     trust: float,
-) -> float:
-    """Run Phase 1 and apply the belief update formula with clamping."""
-    raw_shift = await phase1_direct_persuasion(agent, prompt, trust)
+    topic: str = "",
+) -> tuple[float, str]:
+    """
+    Run Phase 1: LLM evaluates argument quality, then deterministic formula
+    computes the actual shift. Also generates the target's verbal response.
 
-    # Receptivity: average of openness and flexibility (1 - identity_attachment)
-    # This prevents double-damping when both are low
+    Returns (shift_delta, response_text).
+
+    Formula (Friedkin-Johnsen inspired):
+      shift = argument_quality × receptivity × confidence_resistance × trust × SCALE
+    """
+    argument_quality, reasoning = await phase1_evaluate_argument(agent, prompt, trust)
+
+    # Friedkin-Johnsen susceptibility
     receptivity = (max(0.3, agent.openness) + (1 - agent.identity_attachment)) / 2
-    actual_shift = raw_shift * receptivity
+    # Sherif & Hovland: high confidence narrows latitude of acceptance
+    confidence_resistance = 1 - agent.confidence * 0.4
+    # Compute shift
+    actual_shift = argument_quality * receptivity * confidence_resistance * trust * PHASE1_SCALE
 
     old_position = agent.position
     agent.position = max(-1.0, min(1.0, agent.position + actual_shift))
     final_delta = agent.position - old_position
     logger.info(
-        f"Phase1 clamp: raw={raw_shift:.4f} × receptivity={receptivity:.2f} "
-        f"(open={agent.openness:.2f}, id_attach={agent.identity_attachment:.2f}) "
-        f"= actual={actual_shift:.4f} → delta={final_delta:.4f} pos={old_position:.4f}→{agent.position:.4f}"
+        f"Phase1 formula: quality={argument_quality:.3f} × recept={receptivity:.2f} "
+        f"× conf_resist={confidence_resistance:.2f} × trust={trust:.2f} × scale={PHASE1_SCALE} "
+        f"= {actual_shift:.4f} → delta={final_delta:.4f} pos={old_position:.4f}→{agent.position:.4f}"
     )
-    return final_delta
+
+    # Generate the target's spoken reaction
+    response_text = await _generate_phase1_response(agent, prompt, final_delta, topic)
+    return final_delta, response_text
 
 
 # ── Phase 2: LLM conversation propagation ────────────────────────────────
@@ -245,50 +309,132 @@ RESISTANCE_THRESHOLD = 0.003  # minimum shift to count as "not resisted"
 EVANGELIST_THRESHOLD = 0.02   # minimum total shift to become a speaker — below this, you heard it but wouldn't bring it up
 CONVERSATION_BATCH_SIZE = 8
 
-# ── Asch conformity calibration ───────────────────────────────────────────
-# Empirical rates from Asch (1951/1956) line-judgment experiments.
-# Bond & Smith (1996) meta-analysis; Allen & Levine (1968/1971) ally studies.
+# ── Empirical shift calibration ───────────────────────────────────────────
 #
-#   Unanimous voices → base conformity rate (% of trials subjects yielded)
-#   1 voice  →  ~3%   (barely above noise; one dissenter is easily dismissed)
-#   2 voices → ~13%   (social pressure begins to register)
-#   3 voices → ~32%   (plateau onset; three is enough for full group effect)
-#   4+ voices → slight increase, hard ceiling ~37% (Asch 1956, varied group sizes)
+# Sources:
+#   Asch (1951/1956)       — conformity rates by group size
+#   Bond & Smith (1996)    — meta-analysis, mean d=0.92
+#   Allen & Levine (1968)  — ally effect: one dissenter cuts conformity ~0.17×
+#   Cacioppo & Petty (1979)— repeated exposure inverted-U, peaks at 3-5
+#   Friedkin & Johnsen (1990) — opinion dynamics: susceptibility × trust × delta
+#   Fishkin & Luskin (2005)— deliberative polling: 40-60% shift, magnitude 0.05-0.10
+#   Sherif & Hovland (1961)— ego-involvement narrows latitude of acceptance by ~50%
+#   Wood & Porter (2019)   — backfire is rare (~2-5%), only high identity-attachment
 #
-#   Ally effect (Allen & Levine 1968): even ONE voice disagreeing with the
-#   majority drops conformity from ~32% to ~5.5% — a 0.17× suppression factor.
-#   The ally doesn't need to agree with the subject, just break unanimity.
-_ASCH_BASE_RATES = {1: 0.03, 2: 0.13, 3: 0.32}
+# Asch conformity rates (probability of yielding, NOT magnitude):
+#   1 voice → ~3%, 2 → ~13%, 3 → ~33% (plateau), 4+ → ceiling ~35%
+_ASCH_BASE_RATES = {1: 0.03, 2: 0.13, 3: 0.33}
+
+# Phase 1 scale: argument_quality(0-1) × receptivity × trust × SCALE → shift
+# Calibrated so perfect argument to fully receptive person ≈ 0.15 shift
+PHASE1_SCALE = 0.20
+
+# Phase 2 base: median shift magnitude when a listener yields
+# Calibrated to Fishkin individual shifts (0.05-0.10 on 0-1 scale = 0.025-0.05 on our ±1 scale)
+PHASE2_BASE_SHIFT = 0.10
 
 
-def _asch_conformity_pressure(
+def _asch_yield_probability(
     n_unanimous: int,
     has_ally: bool,
     conformity_trait: float,
     identity_attachment: float,
 ) -> float:
     """
-    Pressure multiplier calibrated to Asch (1956) experimental conformity rates.
-
-    n_unanimous: number of DISTINCT neighbors who have pushed in the same
-                 direction (including the current conversation).
-    has_ally:    True if ANY prior neighbor pushed in the OPPOSITE direction,
-                 breaking the unanimity (Allen & Levine 1968 ally effect).
+    Probability that a listener yields due to social conformity pressure.
+    Based on Asch (1956) experimental conformity rates, modulated by traits.
     """
-    if n_unanimous == 0:
+    if n_unanimous <= 0:
         return 0.0
 
     if n_unanimous >= 4:
-        # Marginal increase past 3, hard ceiling at 0.37
-        base = min(0.32 + (n_unanimous - 3) * 0.013, 0.37)
+        base = min(0.33 + (n_unanimous - 3) * 0.005, 0.35)
     else:
         base = _ASCH_BASE_RATES[n_unanimous]
 
     if has_ally:
-        # 5.5 / 32 ≈ 0.17 — even one dissenting voice cuts conformity drastically
-        base *= 0.17
+        base *= 0.17  # Allen & Levine (1968)
 
-    return base * conformity_trait * (1 - identity_attachment)
+    # Modulate by personal traits
+    return base * (0.3 + 0.7 * conformity_trait) * (1 - identity_attachment * 0.5)
+
+
+def _exposure_factor(n_same_direction: int) -> float:
+    """
+    Cacioppo & Petty (1979): persuasion follows an inverted-U with repeated
+    exposure. Agreement peaks at 3-5 exposures, then declines (tedium/reactance).
+    """
+    if n_same_direction <= 1:
+        return 0.8   # first exposure: baseline
+    elif n_same_direction == 2:
+        return 1.0   # second: noticeable boost
+    elif n_same_direction <= 4:
+        return 1.15  # peak zone
+    elif n_same_direction == 5:
+        return 1.0   # starting to decline
+    else:
+        return max(0.6, 1.0 - 0.12 * (n_same_direction - 5))  # tedium
+
+
+def _compute_conversation_outcome(
+    listener: Agent,
+    speaker: Agent,
+    trust: float,
+    n_same_direction: int,
+    has_contrary: bool,
+) -> tuple[float, str]:
+    """
+    Deterministic shift computation from empirical formulas.
+    Returns (shift_magnitude_with_sign, outcome) where outcome is
+    'yield', 'resist', or 'backfire'.
+
+    Two independent pathways to yielding:
+      1. Genuine persuasion (ELM central route): openness × trust × low-confidence
+      2. Social conformity (Asch): group pressure × conformity trait
+    """
+    # ── Pathway 1: Genuine persuasion ──
+    # Probability the argument resonates on its own merits
+    p_genuine = (
+        listener.openness
+        * (1 - listener.identity_attachment)
+        * (1 - listener.confidence * 0.3)
+        * trust
+        * 0.5  # scaling factor — most single conversations don't persuade
+    )
+
+    # ── Pathway 2: Social conformity (Asch) ──
+    p_conformity = _asch_yield_probability(
+        n_same_direction, has_contrary,
+        listener.conformity, listener.identity_attachment,
+    )
+
+    # Combined: either pathway can trigger a shift (independent events)
+    p_yield = 1 - (1 - p_genuine) * (1 - p_conformity)
+    p_yield = min(0.80, p_yield)  # hard cap
+
+    # ── Roll the dice ──
+    if random.random() > p_yield:
+        # Didn't yield — check for backfire
+        # Wood & Porter (2019): backfire is rare (~2-5%), concentrated in
+        # high identity-attachment individuals on identity-linked topics
+        backfire_prob = 0.05 * max(0, (listener.identity_attachment - 0.5) * 2)
+        if random.random() < backfire_prob:
+            mag = random.uniform(0.01, 0.03) * (1 + listener.confidence * 0.5)
+            direction = 1 if speaker.position > listener.position else -1
+            return round(-mag * direction, 4), "backfire"
+        return 0.0, "resist"
+
+    # ── Compute yield magnitude (Friedkin-Johnsen style) ──
+    susceptibility = (max(0.3, listener.openness) + (1 - listener.identity_attachment)) / 2
+    confidence_factor = 1 - listener.confidence * 0.4
+    exposure = _exposure_factor(n_same_direction)
+
+    magnitude = PHASE2_BASE_SHIFT * susceptibility * confidence_factor * trust * exposure
+    magnitude = max(0.005, min(0.06, magnitude))
+
+    # Direction: toward speaker's position
+    direction = 1 if speaker.position > listener.position else -1
+    return round(magnitude * direction, 4), "yield"
 
 
 async def generate_conversation(
@@ -296,11 +442,14 @@ async def generate_conversation(
     listener: Agent,
     topic: str,
     edge_trust: float,
+    outcome: str,
+    shift: float,
     listener_stance: str = "",
 ) -> dict:
     """
-    Generate a conversation where the speaker tries to persuade the listener.
-    Returns { speaker_message, listener_response, raw_shift, reasoning }.
+    Generate dialogue for a conversation whose outcome is already determined.
+    The LLM produces realistic dialogue matching the predetermined shift.
+    Returns { speaker_message, listener_response }.
     """
     client = _get_client()
     argument = getattr(speaker, '_internalized_argument', 'I changed my mind on this.')
@@ -308,22 +457,36 @@ async def generate_conversation(
     total_shift = abs(getattr(speaker, '_total_shift', 0.0))
 
     # Frame the speaker's delivery based on how convinced THEY are
-    # AND their actual position — a speaker at -0.5 shouldn't advocate for the +1 side
     if conviction == "convinced" and total_shift >= 0.05:
         speaker_framing = (
-            "The speaker genuinely believes this now and argues from personal conviction. "
+            "The speaker genuinely believes this and argues from personal conviction. "
             "They rephrase it in their own words, through their own experience."
         )
     else:
-        # Even "skeptical" speakers who crossed the threshold are tentative.
-        # They might mention it but with heavy caveats and personal doubt.
         speaker_framing = (
-            "The speaker is NOT convinced — they're conflicted. They heard something that "
-            "made them think, but they haven't changed their mind. They might say "
-            "'someone was telling me...' or 'I don't know if I agree, but...' or bring it up "
-            "as a question/debate topic rather than advocating for it. "
-            "They should sound like someone processing a new idea, NOT like someone spreading a message. "
-            "Their own doubts and counterarguments should come through."
+            "The speaker is NOT convinced — they're conflicted. They might say "
+            "'someone was telling me...' or 'I don't know if I agree, but...' "
+            "They sound like someone processing a new idea, NOT spreading a message."
+        )
+
+    # Describe the predetermined outcome so the LLM matches the dialogue
+    if outcome == "yield":
+        outcome_desc = (
+            "The listener is somewhat moved — they don't suddenly agree, but they "
+            "concede a point, ask a genuine follow-up, or show they're actually thinking "
+            "about it. Show GRADUAL, reluctant movement, not instant conversion."
+        )
+    elif outcome == "backfire":
+        outcome_desc = (
+            "The argument BACKFIRES. The listener gets defensive, dismissive, or hostile. "
+            "The topic threatens their identity or livelihood. They dig in harder "
+            "and may end the conversation or attack the speaker's credibility."
+        )
+    else:  # resist
+        outcome_desc = (
+            "The listener is UNMOVED. They politely disagree, deflect, change the subject, "
+            "or give surface acknowledgment while internally unchanged. "
+            "'I hear you, but...' or they just don't engage deeply."
         )
 
     if client:
@@ -334,32 +497,18 @@ async def generate_conversation(
                 max_tokens=400,
                 system=(
                     f"Simulate a realistic conversation between two people about {topic}. "
-                    "This is NOT a persuasion success story. Real people resist, deflect, "
-                    "get defensive, change the subject, or dismiss arguments that threaten their identity. "
+                    "Real people resist, deflect, get defensive, or dismiss arguments "
+                    "that threaten their identity. A blue-collar worker talks differently "
+                    "than an educator."
                     "\n\nRULES:"
-                    f"\n- SPEAKER CONVICTION: {speaker_framing} "
-                    "A blue-collar worker talks differently than an educator. "
+                    f"\n- SPEAKER STYLE: {speaker_framing} "
                     "The argument should MUTATE — each person emphasizes different parts, "
-                    "gets details wrong, adds their own spin, or shifts the framing entirely."
-                    "\n- The listener has their OWN existing opinion and defends it. "
-                    "High identity_attachment = dismissive or hostile. "
-                    "Low openness = doesn't engage with the argument. "
-                    "High confidence = already sure of their position. "
-                    "The listener should voice their ACTUAL concerns, not just politely nod."
-                    "\n- Most conversations should NOT result in agreement. "
-                    "People dig in, argue back, or give surface politeness while internally unmoved."
-                    "\n\nSHIFT GUIDELINES (positive = toward speaker's view):"
-                    "\n  0.0-0.02: Listener politely disagrees or deflects. Common for high-confidence or high-identity listeners."
-                    "\n  0.03-0.08: Listener concedes a point or is genuinely thinking. Expected when openness > 0.5 and identity_attachment < 0.5."
-                    "\n  0.08-0.15: Real engagement — listener is reconsidering. Requires high openness AND low identity_attachment AND a compelling argument."
-                    "\n  0.15-0.25: Major shift — only for very open, low-confidence listeners hearing a strong peer argument. Rare."
-                    "\n  Negative (-0.02 to -0.15): Backfire — listener digs in. Expected when identity_attachment > 0.6 or argument threatens their livelihood/identity."
-                    "\n  Consider the listener's traits carefully: a small business owner hearing 'raise wages' has PERSONAL stakes."
+                    "gets details wrong, adds their own spin."
+                    f"\n- OUTCOME (predetermined): {outcome_desc}"
+                    "\n- The listener should voice their ACTUAL concerns, not just politely nod."
                     "\n\nReturn ONLY valid JSON:\n"
                     '{"speaker_message": "1-3 sentences in character", '
-                    '"listener_response": "1-3 sentences in character, showing their real reaction", '
-                    '"raw_shift": float between -0.3 and 0.3, '
-                    '"reasoning": "one sentence explaining why the listener did or did not move"}'
+                    '"listener_response": "1-3 sentences in character, showing their real reaction"}'
                 ),
                 messages=[{
                     "role": "user",
@@ -372,8 +521,7 @@ async def generate_conversation(
                         f"  Position: {listener.position:.2f}, Openness: {listener.openness:.2f}, "
                         f"Analytical: {listener.analytical:.2f}\n"
                         f"  Confidence: {listener.confidence:.2f}, "
-                        f"Identity attachment: {listener.identity_attachment:.2f}, "
-                        f"Conformity: {listener.conformity:.2f}\n"
+                        f"Identity attachment: {listener.identity_attachment:.2f}\n"
                         + (f"  Their current opinion: \"{listener_stance}\"\n" if listener_stance else "")
                         + f"\nTrust between them: {edge_trust:.2f} (0=stranger, 1=close friend)"
                     ),
@@ -381,16 +529,13 @@ async def generate_conversation(
             )
             elapsed = time.time() - t0
             result = _extract_json(response.content[0].text)
-            raw_shift = max(-0.3, min(0.3, float(result.get("raw_shift", 0.0))))
             logger.info(
-                f"  Conversation ({elapsed:.1f}s): {speaker.name} → {listener.name} "
-                f"raw_shift={raw_shift:.3f} | \"{result.get('speaker_message', '')[:50]}\" → \"{result.get('listener_response', '')[:50]}\""
+                f"  Dialogue ({elapsed:.1f}s): {speaker.name} → {listener.name} "
+                f"[{outcome}] | \"{result.get('speaker_message', '')[:50]}\" → \"{result.get('listener_response', '')[:50]}\""
             )
             return {
                 "speaker_message": result.get("speaker_message", ""),
                 "listener_response": result.get("listener_response", ""),
-                "raw_shift": raw_shift,
-                "reasoning": result.get("reasoning", ""),
             }
         except json.JSONDecodeError as e:
             raw_text = response.content[0].text if response and response.content else "(empty)"
@@ -401,20 +546,18 @@ async def generate_conversation(
         except Exception as e:
             logger.error(f"  Conversation LLM error ({speaker.name} → {listener.name}): {e}")
 
-    # Fallback: use the speaker's internalized argument as the message
-    direction = 1 if speaker.position > listener.position else -1
-    raw_shift = random.uniform(0.05, 0.12) * direction
-    # Truncate the argument to feel like natural speech
+    # Fallback dialogue
     arg_words = argument.split()
-    if len(arg_words) > 25:
-        speaker_msg = " ".join(arg_words[:25]) + "..."
+    speaker_msg = " ".join(arg_words[:25]) + ("..." if len(arg_words) > 25 else "")
+    if outcome == "backfire":
+        listener_msg = f"No offense {speaker.name.split()[0]}, but that's not how it works."
+    elif outcome == "resist":
+        listener_msg = f"I hear you, {speaker.name.split()[0]}, but I'm not so sure about that."
     else:
-        speaker_msg = argument
+        listener_msg = f"Hm, that's an interesting point, {speaker.name.split()[0]}. Let me think about that."
     return {
         "speaker_message": speaker_msg,
-        "listener_response": f"I see what you mean, {speaker.name.split()[0]}. Let me think about that.",
-        "raw_shift": raw_shift,
-        "reasoning": "fallback — LLM response could not be parsed",
+        "listener_response": listener_msg,
     }
 
 
@@ -478,6 +621,8 @@ async def phase2_conversations(
 ) -> tuple[list, list, list]:
     """
     One tick of Phase 2: shifted agents have conversations with neighbors.
+    Shift outcomes are computed FIRST from empirical formulas, then the LLM
+    generates dialogue matching the predetermined outcome.
     Returns (shifts, propagations, conversations).
     """
     pairs = _pick_conversation_targets(agents, graph, failed_pairs)
@@ -490,93 +635,99 @@ async def phase2_conversations(
     propagations = []
     conversations = []
 
-    # Batch LLM calls
-    for i in range(0, len(pairs), CONVERSATION_BATCH_SIZE):
-        batch = pairs[i:i + CONVERSATION_BATCH_SIZE]
+    # ── Step 1: Compute all outcomes deterministically ──
+    outcomes = []  # (speaker_id, listener_id, shift, outcome_label, trust)
+    for speaker_id, listener_id in pairs:
+        speaker = agents[speaker_id]
+        listener = agents[listener_id]
+        trust = graph[speaker_id][listener_id].get("weight", 0.5)
 
-        async def run_one(speaker_id: str, listener_id: str):
+        # Count prior exposure from conversation_history
+        # Direction: toward speaker's position (same direction as speaker's argument)
+        direction = 1 if speaker.position > listener.position else -1
+        prior_same = {
+            e["neighbor_id"] for e in listener.conversation_history
+            if e["direction"] == direction
+        }
+        n_same_direction = len(prior_same) + 1  # +1 for current conversation
+        has_contrary = any(
+            e["direction"] != direction
+            for e in listener.conversation_history
+        )
+
+        shift, outcome = _compute_conversation_outcome(
+            listener, speaker, trust, n_same_direction, has_contrary,
+        )
+
+        logger.info(
+            f"  Outcome: {speaker.name} → {listener.name} [{outcome}] "
+            f"shift={shift:+.4f} (n_same={n_same_direction} ally={has_contrary} "
+            f"trust={trust:.2f} open={listener.openness:.2f} "
+            f"id_attach={listener.identity_attachment:.2f} conf={listener.confidence:.2f})"
+        )
+        outcomes.append((speaker_id, listener_id, shift, outcome, trust))
+
+    # ── Step 2: Generate dialogue in batches (LLM only produces text) ──
+    for i in range(0, len(outcomes), CONVERSATION_BATCH_SIZE):
+        batch = outcomes[i:i + CONVERSATION_BATCH_SIZE]
+
+        async def run_one(speaker_id, listener_id, shift, outcome, trust):
             speaker = agents[speaker_id]
             listener = agents[listener_id]
-            trust = graph[speaker_id][listener_id].get("weight", 0.5)
             listener_stance = (stances or {}).get(listener_id, "")
-            return await generate_conversation(speaker, listener, topic, trust, listener_stance)
+            return await generate_conversation(
+                speaker, listener, topic, trust, outcome, shift, listener_stance,
+            )
 
-        results = await asyncio.gather(*[run_one(sid, lid) for sid, lid in batch])
+        results = await asyncio.gather(*[
+            run_one(sid, lid, sh, out, tr) for sid, lid, sh, out, tr in batch
+        ])
 
-        for (speaker_id, listener_id), result in zip(batch, results):
+        for (speaker_id, listener_id, shift, outcome, trust), dialogue in zip(batch, results):
             speaker = agents[speaker_id]
             listener = agents[listener_id]
-            trust = graph[speaker_id][listener_id].get("weight", 0.5)
 
-            # Asch-calibrated conformity pressure replaces simple receptivity.
-            # Count unique neighbors who have spoken in the same direction across
-            # all prior ticks (conversation_history), plus the current speaker.
-            # If any neighbor has ever pushed the OTHER direction, the unanimity
-            # is broken and conformity drops sharply (Allen & Levine ally effect).
-            raw_shift = result["raw_shift"]
-            current_direction = 1 if raw_shift > 0 else -1
+            # Direction for conversation_history
+            direction = 1 if speaker.position > listener.position else -1
 
-            prior_same = {
-                e["neighbor_id"] for e in listener.conversation_history
-                if e["direction"] == current_direction
-            }
-            n_unanimous = len(prior_same) + 1  # +1 for current conversation
-
-            has_ally = any(
-                e["direction"] != current_direction
-                for e in listener.conversation_history
-            )
-
-            conformity_pressure = _asch_conformity_pressure(
-                n_unanimous, has_ally, listener.conformity, listener.identity_attachment
-            )
-            actual_shift = raw_shift * conformity_pressure
-            logger.info(
-                f"  Asch pressure: {listener.name} n_unanimous={n_unanimous} "
-                f"has_ally={has_ally} pressure={conformity_pressure:.4f} "
-                f"raw={raw_shift:.4f} actual={actual_shift:.4f}"
-            )
-
-            # Record this conversation in listener's history so future
-            # interactions compound (the "gaslighting" accumulation effect)
+            # Record exposure in listener's history (even if resisted —
+            # they still heard the argument, building Asch pressure)
             listener.conversation_history.append({
                 "tick": tick,
                 "neighbor_id": speaker_id,
-                "direction": current_direction,
+                "direction": direction,
             })
 
-            # Record conversation
+            # Record conversation for frontend
             conversations.append({
                 "from_id": speaker_id,
                 "to_id": listener_id,
-                "speaker_message": result["speaker_message"],
-                "listener_response": result["listener_response"],
-                "shift": round(actual_shift, 4),
+                "speaker_message": dialogue["speaker_message"],
+                "listener_response": dialogue["listener_response"],
+                "shift": shift,
                 "tick": tick,
             })
 
             # Record propagation (for edge highlighting)
-            resisted = abs(actual_shift) < RESISTANCE_THRESHOLD
-            backfired = actual_shift < -RESISTANCE_THRESHOLD  # pushed further away
             propagations.append({
                 "from_id": speaker_id,
                 "to_id": listener_id,
-                "pressure": round(abs(raw_shift * trust), 4),
-                "resisted": resisted or backfired,
+                "pressure": round(abs(shift), 4),
+                "resisted": outcome != "yield",
             })
 
             # Track attempts per pair — give up after 2 tries
             pair_key = (speaker_id, listener_id)
             attempt_counts[pair_key] = attempt_counts.get(pair_key, 0) + 1
 
-            if resisted:
+            if outcome == "resist":
                 listener.confidence = min(1.0, listener.confidence + 0.03)
                 failed_pairs.add(pair_key)
-                logger.info(f"  {listener.name}: RESISTED {speaker.name} (shift={actual_shift:.4f})")
-            elif backfired:
-                # Apply the backfire shift — listener digs in
+                logger.info(f"  {listener.name}: RESISTED {speaker.name}")
+
+            elif outcome == "backfire":
                 old_pos = listener.position
-                listener.position = max(-1.0, min(1.0, listener.position + actual_shift))
+                listener.position = max(-1.0, min(1.0, listener.position + shift))
                 actual = listener.position - old_pos
                 listener.confidence = min(1.0, listener.confidence + 0.05)
                 failed_pairs.add(pair_key)
@@ -587,30 +738,26 @@ async def phase2_conversations(
                     "new_position": round(listener.position, 4),
                     "source": "pressure",
                 })
-            elif attempt_counts[pair_key] >= 2:
-                # Talked twice, small positive shifts but not enough to spread — move on
-                failed_pairs.add(pair_key)
-                logger.info(f"  {listener.name}: max attempts with {speaker.name}, moving on")
-            if not resisted and not backfired:
+
+            else:  # yield
+                if attempt_counts[pair_key] >= 2:
+                    failed_pairs.add(pair_key)
+                    logger.info(f"  {listener.name}: max attempts with {speaker.name}, moving on")
+
                 old_pos = listener.position
-                listener.position = max(-1.0, min(1.0, listener.position + actual_shift))
+                listener.position = max(-1.0, min(1.0, listener.position + shift))
                 actual = listener.position - old_pos
                 listener._total_shift = getattr(listener, '_total_shift', 0.0) + actual
-                # The listener internalizes the idea — but shaped by how convinced they are
+
+                # Internalize the argument — conviction based on total accumulated shift
                 total = abs(listener._total_shift)
-                if total >= EVANGELIST_THRESHOLD:
-                    # Genuinely moved — they adopt the argument in their own words
-                    listener._internalized_argument = result["speaker_message"]
-                    listener._conviction = "convinced"
-                else:
-                    # Slightly nudged — they heard it but aren't sold
-                    listener._internalized_argument = result["speaker_message"]
-                    listener._conviction = "skeptical"
+                listener._internalized_argument = dialogue["speaker_message"]
+                listener._conviction = "convinced" if total >= 0.05 else "skeptical"
+
                 logger.info(
                     f"  {listener.name}: SHIFTED by {speaker.name} {old_pos:.4f}→{listener.position:.4f} "
                     f"(delta={actual:.4f})"
                 )
-
                 shifts.append({
                     "agent_id": listener_id,
                     "delta": round(actual, 4),
@@ -619,7 +766,7 @@ async def phase2_conversations(
                 })
 
         # Rate limit delay between batches
-        if i + CONVERSATION_BATCH_SIZE < len(pairs):
+        if i + CONVERSATION_BATCH_SIZE < len(outcomes):
             await asyncio.sleep(1.5)
 
     return shifts, propagations, conversations
@@ -697,12 +844,11 @@ async def probe_agent(agent: Agent, topic: str, original_position: float) -> dic
 
 async def run_simulation(
     prompt: str,
-    target_agent_id: str,
+    target_agent_ids: list[str] | None = None,
     society_type: str = "polarized",
     n_agents: int = 25,
     n_ticks: int = 8,
     shift_threshold: float = 0.02,
-    target_index: int = 0,
     agents: dict[str, Agent] | None = None,
     graph=None,
     stances: dict[str, str] | None = None,
@@ -711,6 +857,9 @@ async def run_simulation(
     Run the full simulation and return a SimTimeline.
     If agents/graph/stances are provided (from /populate cache), reuse them.
     """
+    if target_agent_ids is None:
+        target_agent_ids = []
+
     sim_start = time.time()
     logger.info("=" * 70)
     logger.info(f"SIMULATION START: n={n_agents} type={society_type} ticks={n_ticks}")
@@ -729,14 +878,13 @@ async def run_simulation(
         logger.debug(f"  Agent {a.name}: pos={a.position:.3f} open={a.openness:.2f} conf={a.confidence:.2f} conform={a.conformity:.2f} id_attach={a.identity_attachment:.2f} groups={a.group_ids}")
     logger.info(f"Graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 
-    # Find target agent
-    agent_list = list(agents.values())
-    if target_agent_id in agents:
-        target = agents[target_agent_id]
-    else:
-        idx = max(0, min(target_index, len(agent_list) - 1))
-        target = agent_list[idx]
-    logger.info(f"Target: {target.name} (id={target.id}) pos={target.position:.3f} groups={target.group_ids}")
+    # Find target agents
+    targets = [agents[tid] for tid in target_agent_ids if tid in agents]
+    if not targets:
+        # Fallback: pick first agent
+        targets = [list(agents.values())[0]]
+    for t in targets:
+        logger.info(f"Target: {t.name} (id={t.id}) pos={t.position:.3f} groups={t.group_ids}")
 
     # Serialize edges
     edges = []
@@ -772,40 +920,55 @@ async def run_simulation(
         "conversations": [],
     })
 
-    # 2. Phase 1: Direct persuasion on target agent
-    neighbor_weights = [
-        graph[target.id][n].get("weight", 0.5)
-        for n in graph.neighbors(target.id)
-        if graph.has_edge(target.id, n)
-    ] if graph.has_node(target.id) else [0.5]
-    source_trust = sum(neighbor_weights) / len(neighbor_weights) if neighbor_weights else 0.5
-    source_trust = min(0.7, source_trust)
+    # 2. Phase 1: Direct persuasion on ALL targets (concurrent)
+    async def _phase1_one(target):
+        neighbor_weights = [
+            graph[target.id][n].get("weight", 0.5)
+            for n in graph.neighbors(target.id)
+            if graph.has_edge(target.id, n)
+        ] if graph.has_node(target.id) else [0.5]
+        source_trust = sum(neighbor_weights) / len(neighbor_weights) if neighbor_weights else 0.5
+        source_trust = min(0.7, source_trust)
+        delta, response = await run_phase1(target, prompt, source_trust, topic=prompt)
+        return target, delta, response
 
-    direct_delta = await run_phase1(target, prompt, source_trust)
-    target._total_shift = direct_delta
-    # Target internalizes the argument only if they shifted enough to engage with it
-    if abs(direct_delta) >= EVANGELIST_THRESHOLD:
-        target._internalized_argument = prompt
-        target._conviction = "convinced" if abs(direct_delta) >= 0.05 else "skeptical"
-    else:
-        # Target barely moved — they heard it but it didn't stick enough to repeat
-        logger.info(f"  Target {target.name} shift too small ({direct_delta:.4f}) to evangelize")
+    phase1_results = await asyncio.gather(*[_phase1_one(t) for t in targets])
 
     tick1_shifts = []
-    if abs(direct_delta) > 0.001:
-        tick1_shifts.append({
-            "agent_id": target.id,
-            "delta": round(direct_delta, 4),
-            "new_position": round(target.position, 4),
-            "source": "direct",
-        })
+    tick1_conversations = []
+    for target, direct_delta, target_response in phase1_results:
+        target._total_shift = direct_delta
+        if abs(direct_delta) >= EVANGELIST_THRESHOLD:
+            target._internalized_argument = prompt
+            target._conviction = "convinced" if abs(direct_delta) >= 0.05 else "skeptical"
+        else:
+            logger.info(f"  Target {target.name} shift too small ({direct_delta:.4f}) to evangelize")
+
+        if abs(direct_delta) > 0.001:
+            tick1_shifts.append({
+                "agent_id": target.id,
+                "delta": round(direct_delta, 4),
+                "new_position": round(target.position, 4),
+                "source": "direct",
+            })
+
+        conversation = {
+            "from_id": "player",
+            "to_id": target.id,
+            "speaker_message": prompt,
+            "listener_response": target_response,
+            "shift": round(direct_delta, 4),
+            "tick": 1,
+        }
+        tick1_conversations.append(conversation)
+        all_conversations.append(conversation)
 
     ticks.append({
         "tick": 1,
         "agents": [_serialize_agent(a, stances) for a in agents.values()],
         "shifts": tick1_shifts,
         "propagations": [],
-        "conversations": [],
+        "conversations": tick1_conversations,
     })
 
     # 3. Phase 2: Conversation ticks
@@ -888,7 +1051,7 @@ async def run_simulation(
     logger.info("=" * 70)
 
     return {
-        "target_agent_id": target.id,
+        "target_agent_ids": [t.id for t in targets],
         "edges": edges,
         "ticks": ticks,
         "conversations": all_conversations,

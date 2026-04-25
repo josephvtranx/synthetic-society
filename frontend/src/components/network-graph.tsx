@@ -229,7 +229,7 @@ export default function NetworkGraph() {
   const edges = useSimStore((s) => s.edges);
   const selectAgent = useSimStore((s) => s.selectAgent);
   const selectedAgentId = useSimStore((s) => s.selectedAgentId);
-  const targetAgentId = useSimStore((s) => s.timeline?.target_agent_id ?? null);
+  const targetAgentIds = useSimStore((s) => s.timeline?.target_agent_ids ?? []);
   const snapshot = useCurrentSnapshot();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -401,7 +401,7 @@ export default function NetworkGraph() {
         const baseX = pad + s.x * gw;
         const baseY = pad + s.y * gh;
         const isSelected = agent.id === selectedAgentId;
-        const isTarget = agent.id === targetAgentId;
+        const isTarget = targetAgentIds.includes(agent.id);
 
         let drawX = baseX;
         // Thinking wobble
@@ -482,7 +482,7 @@ export default function NetworkGraph() {
 
       animRef.current = requestAnimationFrame(draw);
     },
-    [agents, edges, selectedAgentId, targetAgentId, shifts, propagations, conversations],
+    [agents, edges, selectedAgentId, targetAgentIds, shifts, propagations, conversations],
   );
 
   useEffect(() => {

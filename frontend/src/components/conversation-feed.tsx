@@ -13,7 +13,7 @@ export default function ConversationFeed() {
 
   const mono = { fontFamily: "'Courier New', monospace" } as const;
   const nameById = (id: string) =>
-    allAgents.find((a) => a.id === id)?.name?.split(" ")[0] ?? id.slice(0, 6);
+    id === "player" ? "You" : allAgents.find((a) => a.id === id)?.name?.split(" ")[0] ?? id.slice(0, 6);
 
   // Gather conversations up to current tick
   const conversations: Conversation[] = [];

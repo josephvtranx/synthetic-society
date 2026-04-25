@@ -113,12 +113,12 @@ function drawPreviewFigure(
 function PreviewCanvas({
   agents,
   edges,
-  selectedId,
+  selectedIds,
   onSelect,
 }: {
   agents: AgentData[];
   edges: EdgeData[];
-  selectedId: string | null;
+  selectedIds: string[];
   onSelect: (id: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -172,7 +172,7 @@ function PreviewCanvas({
       for (const agent of agents) {
         const x = pad + agent.x * gw;
         const y = pad + agent.y * gh;
-        const isSelected = agent.id === selectedId;
+        const isSelected = selectedIds.includes(agent.id);
 
         if (!blinkTimers.current.has(agent.id)) {
           blinkTimers.current.set(agent.id, { timer: 2 + Math.random() * 4, blinking: false });
@@ -196,7 +196,7 @@ function PreviewCanvas({
 
       animRef.current = requestAnimationFrame(draw);
     },
-    [agents, selectedId, edges],
+    [agents, selectedIds, edges],
   );
 
   useEffect(() => {
@@ -235,7 +235,7 @@ function PreviewCanvas({
 export default function SetupScreen() {
   const [topic, setTopic] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [targetId, setTargetId] = useState<string | null>(null);
+  const [targetIds, setTargetIds] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentData[]>([]);
   const [edges, setEdges] = useState<EdgeData[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -245,13 +245,23 @@ export default function SetupScreen() {
   const setLoading = useSimStore((s) => s.setLoading);
   const loading = useSimStore((s) => s.loading);
 
-  const selectedAgent = targetId ? agents.find((a) => a.id === targetId) : null;
+  const selectedAgents = agents.filter((a) => targetIds.includes(a.id));
+
+  function toggleTarget(id: string) {
+    setTargetIds((prev) =>
+      prev.includes(id)
+        ? prev.filter((x) => x !== id)
+        : prev.length < 3
+          ? [...prev, id]
+          : prev
+    );
+  }
 
   async function handleGenerate() {
     if (!topic.trim()) return;
     setGenerating(true);
     setError(null);
-    setTargetId(null);
+    setTargetIds([]);
     try {
       const data = await populateSociety("polarized", 25, topic);
       setAgents(data.agents);
@@ -265,15 +275,13 @@ export default function SetupScreen() {
   }
 
   async function handleInject() {
-    if (!prompt.trim() || !targetId) return;
+    if (!prompt.trim() || targetIds.length === 0) return;
     setLoading(true);
     setError(null);
     try {
-      const targetIndex = agents.findIndex((a) => a.id === targetId);
       const timeline = await runSimulation({
         prompt,
-        target_agent_id: targetId,
-        target_index: targetIndex >= 0 ? targetIndex : 0,
+        target_agent_ids: targetIds,
         society_type: "polarized",
         n_agents: 25,
       });
@@ -335,11 +343,11 @@ export default function SetupScreen() {
         <div className="flex-1 flex gap-0 overflow-hidden mx-6 mb-6" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
           {/* Canvas */}
           <div className="flex-1 relative">
-            <PreviewCanvas agents={agents} edges={edges} selectedId={targetId} onSelect={setTargetId} />
-            {!targetId && (
+            <PreviewCanvas agents={agents} edges={edges} selectedIds={targetIds} onSelect={toggleTarget} />
+            {targetIds.length < 3 && (
               <div className="absolute bottom-5 left-1/2 -translate-x-1/2 px-4 py-2" style={{ background: CARD, border: `1px solid ${TEXT_PRIMARY}` }}>
                 <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
-                  click someone to target
+                  {targetIds.length === 0 ? "click up to 3 targets" : `${targetIds.length}/3 selected — pick more or inject`}
                 </span>
               </div>
             )}
@@ -353,34 +361,33 @@ export default function SetupScreen() {
 
           {/* Right panel */}
           <div className="w-80 p-5 flex flex-col gap-4" style={{ background: CARD, borderLeft: `2px solid ${TEXT_PRIMARY}` }}>
-            {selectedAgent ? (
-              <div className="p-3" style={{ border: `1px solid ${TEXT_PRIMARY}` }}>
-                <div className="text-sm font-bold uppercase tracking-wide" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
-                  {selectedAgent.name}
-                </div>
-                {selectedAgent.stance && (
-                  <div className="text-xs mt-2 leading-relaxed" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
-                    &ldquo;{selectedAgent.stance}&rdquo;
+            {selectedAgents.length > 0 ? (
+              <div className="space-y-2 max-h-52 overflow-y-auto">
+                {selectedAgents.map((a) => (
+                  <div key={a.id} className="p-2" style={{ border: `1px solid ${TEXT_PRIMARY}` }}>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold uppercase tracking-wide" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
+                        {a.name}
+                      </div>
+                      <button onClick={() => toggleTarget(a.id)} className="text-xs uppercase" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>x</button>
+                    </div>
+                    {a.stance && (
+                      <div className="text-xs mt-1 leading-relaxed" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace", fontSize: "10px" }}>
+                        &ldquo;{a.stance}&rdquo;
+                      </div>
+                    )}
+                    <div className="mt-1 flex gap-3 text-xs" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace", fontSize: "9px" }}>
+                      <span>POS <span style={{ color: TEXT_PRIMARY }}>{a.position.toFixed(2)}</span></span>
+                      <span>OPN <span style={{ color: TEXT_PRIMARY }}>{((a.openness ?? 0.5) * 100).toFixed(0)}%</span></span>
+                      <span>ID <span style={{ color: TEXT_PRIMARY }}>{(a.identity_attachment * 100).toFixed(0)}%</span></span>
+                    </div>
                   </div>
-                )}
-                <div className="mt-2 grid grid-cols-2 gap-1 text-xs" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>
-                  <div>POS <span style={{ color: TEXT_PRIMARY }}>{selectedAgent.position.toFixed(2)}</span></div>
-                  <div>OPN <span style={{ color: TEXT_PRIMARY }}>{((selectedAgent.openness ?? 0.5) * 100).toFixed(0)}%</span></div>
-                  <div>CNF <span style={{ color: TEXT_PRIMARY }}>{((selectedAgent.conformity ?? 0.5) * 100).toFixed(0)}%</span></div>
-                  <div>ID <span style={{ color: TEXT_PRIMARY }}>{(selectedAgent.identity_attachment * 100).toFixed(0)}%</span></div>
-                </div>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {selectedAgent.groups.map((g) => (
-                    <span key={g} className="text-xs px-1.5 py-0.5 uppercase tracking-wider" style={{ border: `1px solid ${TEXT_PRIMARY}`, color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace", fontSize: "9px" }}>
-                      {g.replace("_", " ")}
-                    </span>
-                  ))}
-                </div>
+                ))}
               </div>
             ) : (
               <div className="p-3 text-center" style={{ border: `1px solid ${TEXT_MUTED}` }}>
                 <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>
-                  select a target
+                  select up to 3 targets
                 </span>
               </div>
             )}
@@ -401,7 +408,7 @@ export default function SetupScreen() {
 
             <button
               onClick={handleInject}
-              disabled={!prompt.trim() || !targetId || loading}
+              disabled={!prompt.trim() || targetIds.length === 0 || loading}
               className="w-full py-2.5 text-xs uppercase tracking-widest transition-all disabled:opacity-25 disabled:cursor-not-allowed"
               style={{ background: TEXT_PRIMARY, color: CARD, fontFamily: "'Courier New', monospace", fontWeight: 700 }}
             >
@@ -416,7 +423,7 @@ export default function SetupScreen() {
 
             <div className="mt-auto text-center">
               <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>
-                25 agents / {topic} / 1 idea
+                25 agents / {topic} / {targetIds.length} target{targetIds.length !== 1 ? "s" : ""}
               </span>
             </div>
           </div>
