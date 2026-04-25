@@ -1,28 +1,37 @@
 # Tick Mechanics
 
-## Core Loop
-One tick = one player action. 5 ticks total per sim run. Player sends a free-text message targeting 1–3 agents.
+## Game Structure
+Single-message game. Player gets one shot: pick one agent, write one argument. Then watch 20 ticks of cascading belief propagation.
 
-## Two-Phase Resolution
-
-### Phase 1 — Direct Influence (LLM)
-- Targeted agents receive the player's message
-- Each gets a parallel LLM call (Haiku): "given your personality, current belief, and this message from [source], how does your position shift?"
-- Raw delta returned via Zod structured output
-- Post-processing clamp: `final_delta = raw_delta × openness × source_trust`
-- Batched with `Promise.all`, never sequential
-
-### Phase 2 — Social Propagation (Deterministic)
-- Every agent who changed in Phase 1 influences their graph neighbors
-- No LLM call — pure formula:
+## Turn 0 — Phase 1 (LLM)
+- Player targets one agent with a free-text argument
+- Haiku call: agent personality + current belief + argument → raw belief shift
+- Post-processing clamp:
   ```
-  neighbor_delta = changed_agent_delta × edge_trust × neighbor_conformity × decay_factor
+  actual_shift = raw_shift × openness × source_trust × (1 - identity_attachment) × (1 - confidence × resistance_factor)
   ```
-- This mechanically produces surface-level agreement: agents shift because the crowd shifted, not because they engaged with an argument
+
+## Turns 1–20 — Phase 2 (Deterministic)
+- No LLM calls. Pure math. This is what makes it fast.
+- Every agent who shifted exerts pressure on neighbors:
+  ```
+  pressure_shift = sum_over_neighbors(neighbor_delta × edge_trust × my_conformity) × (1 - identity_attachment) × decay
+  ```
+- Pressure cascades 1–2 hops per tick
+- Beliefs propagate outward through the network
+
+## End — Probe
+- Every agent past a shift threshold gets probed
+- Probe = a related-but-different question requiring the agent to *apply* their new belief to a novel scenario
+- Genuine shifters answer coherently; surface shifters reveal inconsistency
+- Produces a hard number: "X% of shifts were surface-level"
 
 ## Why This Design
-The two-phase structure directly answers Listen Labs' core question: "What triggers a genuine belief shift vs. surface-level agreement?"
 
-- **Phase 1 shifts** (direct persuasion with content) → more likely genuine
-- **Phase 2 shifts** (social pressure, no argument) → more likely surface
-- The genuine-vs-surface probe tests independently of phase — but the mechanics naturally produce both kinds of shift rather than relying on the LLM to roleplay the difference
+The single-message structure isolates the two mechanisms cleanly:
+- **Phase 1** produces genuine belief change (agent engaged with an argument)
+- **Phase 2** produces surface compliance (agent moved because the crowd moved)
+
+The probe tests independently of which phase caused the shift — but the mechanics ensure both kinds naturally occur rather than relying on the LLM to roleplay the difference.
+
+High-conformity agents in Phase 2 are the primary source of surface compliance. The probe catches them because they never processed an argument — they just felt social pressure.

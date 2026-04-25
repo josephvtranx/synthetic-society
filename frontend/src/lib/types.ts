@@ -1,5 +1,4 @@
-// Matches backend state snapshot shape from simulation.get_state_snapshot()
-
+// Agent data as returned by the backend per tick
 export type AgentData = {
   id: string;
   name: string;
@@ -9,51 +8,69 @@ export type AgentData = {
   openness?: number;
   analytical?: number;
   conformity?: number;
-  agreeableness?: number;
-  influence_score: number; // 0-1
   identity_attachment: number; // 0-1
   x: number;
   y: number;
-  target_x: number;
-  target_y: number;
-  current_interaction_partner_id: string | null;
   groups: string[];
-  memory: Array<{ from: string; message: string; tick: number }>;
 };
 
 export type EdgeData = {
   source: string;
   target: string;
-  weight: number;
+  weight: number; // trust, 0-1
 };
 
-export type ConversationEvent = {
-  agent_a_id: string;
-  agent_b_id: string;
-  agent_a_name?: string;
-  agent_b_name?: string;
-  agent_a_statement: string;
-  agent_b_statement: string;
-  shift_a?: number;
-  shift_b?: number;
+// Per-tick events
+
+export type AgentShift = {
+  agent_id: string;
+  delta: number;
+  new_position: number;
+  source: "direct" | "pressure"; // Phase 1 or Phase 2
 };
 
-export type SimStats = {
-  mean_position: number;
-  std_position: number;
-  polarization_index: number;
-  tick: number;
+export type Propagation = {
+  from_id: string;
+  to_id: string;
+  pressure: number;
+  resisted: boolean;
 };
 
-export type SimState = {
+// Snapshot of the sim at one tick
+export type TickSnapshot = {
   tick: number;
   agents: AgentData[];
+  shifts: AgentShift[];
+  propagations: Propagation[];
+};
+
+// Probe results after sim completes
+export type ProbeResult = {
+  agent_id: string;
+  shifted: boolean;
+  genuine: boolean;
+  probe_question: string;
+  probe_answer: string;
+};
+
+// Full timeline returned by backend after sim runs
+export type SimTimeline = {
   edges: EdgeData[];
-  active_conversations: ConversationEvent[];
-  recent_events: ConversationEvent[];
-  stats: SimStats;
-  win_progress: number;
-  game_mode: string;
-  is_running: boolean;
-  has_converged?: boolean;
+  ticks: TickSnapshot[];
+  probe_results: ProbeResult[];
+  summary: {
+    total_shifted: number;
+    genuine_count: number;
+    surface_count: number;
+    clusters_reached: number;
+  };
+};
+
+// What the player submits
+export type PlayerInjection = {
+  prompt: string;
+  target_agent_id: string;
+  target_index: number;
+  society_type: "polarized" | "consensus" | "random";
+  n_agents: number;
 };

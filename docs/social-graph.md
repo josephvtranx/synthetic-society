@@ -3,32 +3,32 @@
 ## Edge Structure
 - Directed weighted edges representing trust
 - Asymmetric: A→B trust ≠ B→A trust
-- Trust values in [0, 1], fixed for the duration of a sim (no trust updates in 5 ticks)
+- Trust values in [0, 1], computed once at init, fixed for duration of sim
 
 ## Trust Initialization
-Trust derived from agent attributes, not random:
+Trust derived from demographic similarity, not random:
 ```
-base_trust = f(shared_region, age_proximity, education_similarity, institutional_trust_gap)
+base_trust = f(shared_region, age_proximity, education_similarity)
 ```
-Similar demographics → higher trust. Large gap in `trustInstitutions` → lower trust. Player can intuit why one agent trusts another.
+Similar demographics → higher trust. Player can look at two agents and intuit why one trusts the other.
 
 ## Topology: Clustered Small-World
-3–4 clusters of 6–8 agents. Dense within clusters (avg degree ~4 intra-cluster), sparse between (2–3 cross-cluster bridges).
+25 agents in 4 clusters. Dense within clusters (4–6 connections each), sparse between (1–3 edges per cluster pair).
 
-### Why
-- Within-cluster propagation is fast → visible feedback for the player
-- Cross-cluster propagation requires hitting a bridge node → strategic puzzle
-- 25 agents, ~3.5 clusters of 7, avg degree ~5 total
+### Clusters
+- **Blue-collar / trades** — skeptical of top-down policy, high identity attachment
+- **Educators / public sector** — moderate openness, cross-generational connections
+- **Young professionals / remote workers** — high conformity, low identity attachment
+- **Small business owners** — mixed views, some bridge nodes to other clusters
 
-### Demo Clusters
-- **Cluster A — Blue-collar / trades**: Marcus here, skeptical core
-- **Cluster B — Educators / public sector**: Diane here, moderate middle
-- **Cluster C — Young professionals / remote workers**: Tyler here, high conformity
-- **Cluster D — Small business owners**: mixed views, bridge nodes
+### Bridge Nodes
+Bridge nodes are agents with cross-cluster edges. They're not labeled — they emerge from graph structure. Strategic core of the game: identifying and targeting bridges with high cross-cluster trust.
 
-Diane is the natural cross-cluster bridge (retired teacher, cross-generational connections). Her flip is the pivotal demo moment.
+### Initial Beliefs
+Sampled from cluster-specific distributions with variance. Clusters are not internally uniform — there's spread within each group. This prevents the sim from feeling deterministic.
 
 ## What We Avoided
 - **Erdős–Rényi**: no legible structure, player can't strategize
 - **Scale-free / power law**: one hub dominates, boring
-- **Dynamic trust**: complexity for no payoff in 5 ticks
+- **Dynamic trust**: complexity for no payoff in 20 ticks
+- **Influence as a parameter**: influence should emerge from degree and bridgeness, not be assigned

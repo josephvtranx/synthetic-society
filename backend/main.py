@@ -7,11 +7,15 @@ import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import simulation
+from simulate import run_simulation
+from agent import generate_population
+from network import create_society_graph
 
 app = FastAPI(title="Society Simulator")
 
@@ -39,7 +43,74 @@ async def broadcast_state(snapshot: dict) -> None:
     connected_clients.difference_update(dead)
 
 
-# ── REST Endpoints ──────────────────────────────────────────────────────────
+# ── New single-message simulation endpoints ────────────────────────────────
+
+
+class SimulateRequest(BaseModel):
+    prompt: str
+    target_agent_id: str = ""
+    target_index: int = 0  # fallback: pick agent by list index
+    society_type: str = "polarized"
+    n_agents: int = 25
+
+
+@app.post("/populate")
+async def populate(body: dict):
+    """
+    Generate a population and graph for the setup preview.
+    Returns agents and edges so the frontend can display real agents.
+    """
+    society_type = body.get("society_type", "polarized")
+    n_agents = max(5, min(50, body.get("n_agents", 25)))
+
+    agents = generate_population(n_agents, "preview", society_type)
+    graph = create_society_graph(agents)
+
+    agents_list = []
+    for a in agents.values():
+        agents_list.append({
+            "id": a.id,
+            "name": a.name,
+            "age": a.age,
+            "position": round(a.position, 4),
+            "confidence": round(a.confidence, 3),
+            "openness": round(a.openness, 3),
+            "analytical": round(a.analytical, 3),
+            "conformity": round(a.conformity, 3),
+            "identity_attachment": round(a.identity_attachment, 3),
+            "x": round(a.x, 4),
+            "y": round(a.y, 4),
+            "groups": a.group_ids,
+        })
+
+    edges = []
+    for u, v, data in graph.edges(data=True):
+        edges.append({
+            "source": u,
+            "target": v,
+            "weight": round(data.get("weight", 0.5), 3),
+        })
+
+    return {"agents": agents_list, "edges": edges}
+
+
+@app.post("/simulate")
+async def simulate(req: SimulateRequest):
+    """
+    Run the full single-message simulation.
+    Returns a complete SimTimeline for frontend playback.
+    """
+    result = await run_simulation(
+        prompt=req.prompt,
+        target_agent_id=req.target_agent_id,
+        target_index=req.target_index,
+        society_type=req.society_type,
+        n_agents=max(5, min(50, req.n_agents)),
+    )
+    return result
+
+
+# ── Legacy REST Endpoints ──────────────────────────────────────────────────
 
 @app.post("/start")
 async def start_simulation(body: dict):

@@ -160,57 +160,132 @@ def update_belief(
     return abs(final_delta)
 
 
+# ── Cluster-specific trait distributions ─────────────────────────────────────
+# Each cluster has distinct personality priors and belief leanings.
+# Format: (alpha, beta) for np.random.beta()
+
+CLUSTER_TRAITS = {
+    # blue_collar: moderate openness, high conformity, high identity attachment
+    0: {
+        "openness": (2.0, 3.0),
+        "analytical": (1.5, 2.5),
+        "conformity": (3.5, 2.0),
+        "identity_attachment": (3.0, 2.0),
+        "confidence": (3.0, 2.0),
+        "position_lean": -0.4,   # leans against
+        "position_spread": 0.3,
+        "age_range": (30, 65),
+    },
+    # educators: high openness, high analytical, low conformity
+    1: {
+        "openness": (3.5, 1.5),
+        "analytical": (3.5, 2.0),
+        "conformity": (1.5, 3.0),
+        "identity_attachment": (1.5, 3.0),
+        "confidence": (2.5, 2.0),
+        "position_lean": 0.3,    # leans for
+        "position_spread": 0.35,
+        "age_range": (28, 60),
+    },
+    # young_professionals: moderate openness, low identity, moderate conformity
+    2: {
+        "openness": (2.5, 2.0),
+        "analytical": (2.5, 2.0),
+        "conformity": (2.5, 2.0),
+        "identity_attachment": (1.5, 3.5),
+        "confidence": (2.0, 2.5),
+        "position_lean": 0.1,    # slightly for
+        "position_spread": 0.4,
+        "age_range": (22, 38),
+    },
+    # small_business: low openness, low conformity, very high identity attachment
+    3: {
+        "openness": (1.5, 3.0),
+        "analytical": (2.0, 2.0),
+        "conformity": (1.5, 3.0),
+        "identity_attachment": (4.0, 1.5),
+        "confidence": (3.5, 1.5),
+        "position_lean": -0.6,   # strongly against
+        "position_spread": 0.2,
+        "age_range": (35, 70),
+    },
+}
+
+# Cluster spatial centers for visual clustering on the canvas
+CLUSTER_CENTERS = [
+    (0.2, 0.25),   # blue_collar: top-left
+    (0.75, 0.2),   # educators: top-right
+    (0.25, 0.75),  # young_professionals: bottom-left
+    (0.8, 0.78),   # small_business: bottom-right
+]
+
+
 def generate_population(
     n: int,
     topic: str,
     society_type: str,
 ) -> dict[str, Agent]:
     """
-    Generate n agents with diverse personalities and positions.
-    society_type: "polarized" | "consensus" | "random"
+    Generate n agents with cluster-specific personality distributions.
+    Cluster assignment happens later in create_society_graph, but we
+    pre-assign clusters here based on CLUSTER_SIZES so agents get the
+    right traits. Graph creation will overwrite group_ids with cluster names.
     Returns: dict mapping agent_id -> Agent
     """
+    from network import CLUSTER_SIZES
+
     names = random.sample(NAMES, min(n, len(NAMES)))
     if n > len(NAMES):
         for i in range(n - len(NAMES)):
             names.append(f"Agent_{i}")
 
+    # Build cluster assignments for n agents
+    n_clusters = len(CLUSTER_SIZES)
+    if n == 25:
+        sizes = list(CLUSTER_SIZES)
+    else:
+        base = n // n_clusters
+        remainder = n % n_clusters
+        sizes = [base + (1 if i < remainder else 0) for i in range(n_clusters)]
+
+    cluster_assignments = []
+    for cluster_id, size in enumerate(sizes):
+        cluster_assignments.extend([cluster_id] * size)
+
     agents = {}
     for i in range(n):
         agent_id = str(uuid.uuid4())[:8]
+        cluster_id = cluster_assignments[i]
+        traits = CLUSTER_TRAITS[cluster_id]
 
-        # Personality traits from Beta distributions
-        openness = float(np.random.beta(2.5, 2.0))
-        analytical = float(np.random.beta(2.0, 2.0))
-        conformity = float(np.random.beta(2.0, 2.5))
-        agreeableness = float(np.random.beta(3.0, 2.0))
-        influence_score = float(np.random.beta(1.5, 4.0))
-        identity_attachment = float(np.random.beta(1.5, 3.0))
-        confidence = float(np.random.beta(2.5, 2.0))
+        # Personality traits from cluster-specific Beta distributions
+        openness = float(np.clip(np.random.beta(*traits["openness"]), 0.05, 0.95))
+        analytical = float(np.clip(np.random.beta(*traits["analytical"]), 0.05, 0.95))
+        conformity = float(np.clip(np.random.beta(*traits["conformity"]), 0.05, 0.95))
+        identity_attachment = float(np.clip(np.random.beta(*traits["identity_attachment"]), 0.05, 0.95))
+        confidence = float(np.clip(np.random.beta(*traits["confidence"]), 0.05, 0.95))
 
-        # Position based on society type
+        # Position: cluster lean + noise, overridden by society_type if needed
         if society_type == "polarized":
-            if random.random() < 0.5:
-                position = -float(np.random.beta(6, 2))
-            else:
-                position = float(np.random.beta(6, 2))
+            lean = traits["position_lean"]
+            spread = traits["position_spread"]
+            position = lean + random.gauss(0, spread)
         elif society_type == "consensus":
             position = float(np.random.beta(5, 5)) * 0.6 - 0.3
         else:  # random
             position = random.uniform(-1.0, 1.0)
+        position = max(-1.0, min(1.0, position))
 
-        # Demographics
-        age = random.randint(18, 75)
-        group_ids = [
-            random.choice(AGE_GROUPS),
-            random.choice(LOCALE_GROUPS),
-            random.choice(EDUCATION_GROUPS),
-        ]
+        # Age from cluster range
+        age_lo, age_hi = traits["age_range"]
+        age = random.randint(age_lo, age_hi)
 
-        # Spatial position
-        x = random.uniform(0.05, 0.95)
-        y = random.uniform(0.05, 0.95)
+        # Spatial position: clustered around cluster center with jitter
+        cx, cy = CLUSTER_CENTERS[cluster_id]
+        x = max(0.05, min(0.95, cx + random.gauss(0, 0.08)))
+        y = max(0.05, min(0.95, cy + random.gauss(0, 0.08)))
 
+        # group_ids will be overwritten by create_society_graph with cluster name
         agent = Agent(
             id=agent_id,
             name=names[i],
@@ -218,9 +293,9 @@ def generate_population(
             openness=openness,
             analytical=analytical,
             conformity=conformity,
-            agreeableness=agreeableness,
-            influence_score=influence_score,
-            group_ids=group_ids,
+            agreeableness=0.5,      # deprecated, kept for compat
+            influence_score=0.0,    # deprecated, kept for compat
+            group_ids=[],
             position=position,
             confidence=confidence,
             identity_attachment=identity_attachment,
