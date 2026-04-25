@@ -82,6 +82,10 @@ class Agent:
     x: float = 0.5
     y: float = 0.5
 
+    # Conversation history — grows across ticks, drives Asch conformity pressure
+    # Each entry: {"tick": int, "neighbor_id": str, "direction": int (+1 or -1)}
+    conversation_history: list = field(default_factory=list)
+
 
 # ── Cluster-specific trait distributions ─────────────────────────────────────
 # Each cluster has distinct personality priors and belief leanings.
