@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+anthropic
+networkx
+numpy
+python-dotenv
+websockets
