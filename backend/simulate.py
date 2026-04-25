@@ -245,6 +245,51 @@ RESISTANCE_THRESHOLD = 0.003  # minimum shift to count as "not resisted"
 EVANGELIST_THRESHOLD = 0.02   # minimum total shift to become a speaker — below this, you heard it but wouldn't bring it up
 CONVERSATION_BATCH_SIZE = 8
 
+# ── Asch conformity calibration ───────────────────────────────────────────
+# Empirical rates from Asch (1951/1956) line-judgment experiments.
+# Bond & Smith (1996) meta-analysis; Allen & Levine (1968/1971) ally studies.
+#
+#   Unanimous voices → base conformity rate (% of trials subjects yielded)
+#   1 voice  →  ~3%   (barely above noise; one dissenter is easily dismissed)
+#   2 voices → ~13%   (social pressure begins to register)
+#   3 voices → ~32%   (plateau onset; three is enough for full group effect)
+#   4+ voices → slight increase, hard ceiling ~37% (Asch 1956, varied group sizes)
+#
+#   Ally effect (Allen & Levine 1968): even ONE voice disagreeing with the
+#   majority drops conformity from ~32% to ~5.5% — a 0.17× suppression factor.
+#   The ally doesn't need to agree with the subject, just break unanimity.
+_ASCH_BASE_RATES = {1: 0.03, 2: 0.13, 3: 0.32}
+
+
+def _asch_conformity_pressure(
+    n_unanimous: int,
+    has_ally: bool,
+    conformity_trait: float,
+    identity_attachment: float,
+) -> float:
+    """
+    Pressure multiplier calibrated to Asch (1956) experimental conformity rates.
+
+    n_unanimous: number of DISTINCT neighbors who have pushed in the same
+                 direction (including the current conversation).
+    has_ally:    True if ANY prior neighbor pushed in the OPPOSITE direction,
+                 breaking the unanimity (Allen & Levine 1968 ally effect).
+    """
+    if n_unanimous == 0:
+        return 0.0
+
+    if n_unanimous >= 4:
+        # Marginal increase past 3, hard ceiling at 0.37
+        base = min(0.32 + (n_unanimous - 3) * 0.013, 0.37)
+    else:
+        base = _ASCH_BASE_RATES[n_unanimous]
+
+    if has_ally:
+        # 5.5 / 32 ≈ 0.17 — even one dissenting voice cuts conformity drastically
+        base *= 0.17
+
+    return base * conformity_trait * (1 - identity_attachment)
+
 
 async def generate_conversation(
     speaker: Agent,
@@ -463,10 +508,42 @@ async def phase2_conversations(
             listener = agents[listener_id]
             trust = graph[speaker_id][listener_id].get("weight", 0.5)
 
-            # Clamp shift same as Phase 1
+            # Asch-calibrated conformity pressure replaces simple receptivity.
+            # Count unique neighbors who have spoken in the same direction across
+            # all prior ticks (conversation_history), plus the current speaker.
+            # If any neighbor has ever pushed the OTHER direction, the unanimity
+            # is broken and conformity drops sharply (Allen & Levine ally effect).
             raw_shift = result["raw_shift"]
-            receptivity = (max(0.3, listener.openness) + (1 - listener.identity_attachment)) / 2
-            actual_shift = raw_shift * receptivity
+            current_direction = 1 if raw_shift > 0 else -1
+
+            prior_same = {
+                e["neighbor_id"] for e in listener.conversation_history
+                if e["direction"] == current_direction
+            }
+            n_unanimous = len(prior_same) + 1  # +1 for current conversation
+
+            has_ally = any(
+                e["direction"] != current_direction
+                for e in listener.conversation_history
+            )
+
+            conformity_pressure = _asch_conformity_pressure(
+                n_unanimous, has_ally, listener.conformity, listener.identity_attachment
+            )
+            actual_shift = raw_shift * conformity_pressure
+            logger.info(
+                f"  Asch pressure: {listener.name} n_unanimous={n_unanimous} "
+                f"has_ally={has_ally} pressure={conformity_pressure:.4f} "
+                f"raw={raw_shift:.4f} actual={actual_shift:.4f}"
+            )
+
+            # Record this conversation in listener's history so future
+            # interactions compound (the "gaslighting" accumulation effect)
+            listener.conversation_history.append({
+                "tick": tick,
+                "neighbor_id": speaker_id,
+                "direction": current_direction,
+            })
 
             # Record conversation
             conversations.append({
@@ -681,6 +758,7 @@ async def run_simulation(
     for a in agents.values():
         a._total_shift = 0.0
         a._internalized_argument = None  # None = hasn't been convinced yet
+        a.conversation_history = []      # Reset Asch history each simulation run
 
     all_conversations = []
     ticks = []

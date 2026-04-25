@@ -11,14 +11,38 @@ Single-message game. Player gets one shot: pick one agent, write one argument. T
   actual_shift = raw_shift × openness × source_trust × (1 - identity_attachment) × (1 - confidence × resistance_factor)
   ```
 
-## Turns 1–20 — Phase 2 (Deterministic)
-- No LLM calls. Pure math. This is what makes it fast.
-- Every agent who shifted exerts pressure on neighbors:
-  ```
-  pressure_shift = sum_over_neighbors(neighbor_delta × edge_trust × my_conformity) × (1 - identity_attachment) × decay
-  ```
-- Pressure cascades 1–2 hops per tick
-- Beliefs propagate outward through the network
+## Turns 1–20 — Phase 2 (LLM conversation + Asch conformity shift)
+- Shifted agents have LLM-generated conversations with their highest-trust unconvinced neighbor
+- The LLM produces `raw_shift`; the actual shift is determined by **Asch-calibrated conformity pressure**
+
+### Asch conformity model
+
+Each agent stores a `conversation_history`: every neighbor who has spoken to them and the direction they pushed, accumulated across all ticks.
+
+```
+n_unanimous = distinct neighbors who pushed same direction (history + current speaker)
+base_rate   = Asch (1956) empirical rates:
+                1 voice  → 3%   (barely above noise)
+                2 voices → 13%  (pressure begins)
+                3 voices → 32%  (plateau onset — unanimity achieves full effect)
+                4+ voices→ up to 37% (marginal gains, hard ceiling)
+ally_factor = 0.17 if any prior neighbor pushed OPPOSITE direction (Allen & Levine 1968)
+             else 1.0
+
+conformity_pressure = base_rate × ally_factor × agent.conformity × (1 − identity_attachment)
+actual_shift        = raw_shift × conformity_pressure
+```
+
+### Why these numbers
+Asch's line-judgment experiments found that ~32% of responses conformed when three or more confederates unanimously gave the wrong answer. The rate plateaued there regardless of larger groups. Allen & Levine (1968/1971) showed that a single dissenter — even one who couldn't reliably judge the lines — dropped conformity from ~32% to ~5.5% (ratio ≈ 0.17). Bond & Smith (1996) meta-analysis confirmed the plateau and ally effects across cultures.
+
+### Accumulation ("gaslighting") effect
+- Tick 2: target's 1 neighbor speaks → 3% base × conformity trait — minimal yield
+- Tick 3: a 2nd neighbor speaks the same way → jumps to 13%
+- Tick 4+: 3rd unique voice → 32% — belief begins to crack
+- Any dissenting voice in history → back to ~5.5% for that agent
+
+High-conformity agents who face unanimous peer pressure across multiple ticks are the primary source of **surface compliance**. They shift without processing an argument; the probe exposes them.
 
 ## End — Probe
 - Every agent past a shift threshold gets probed

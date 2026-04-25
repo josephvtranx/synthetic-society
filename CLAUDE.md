@@ -64,12 +64,29 @@ The targeted agent's personality + belief + the argument go to the LLM (Haiku). 
 actual_shift = raw_shift × openness × source_trust × (1 - identity_attachment) × (1 - confidence × resistance_factor)
 ```
 
-### Turns 1–20 — Phase 2 only (deterministic, no LLM)
-For every agent who shifted, neighbors feel pressure:
+### Turns 1–20 — Phase 2 (LLM conversation + Asch conformity shift)
+Shifted agents have conversations with unconvinced neighbors. The LLM generates the dialogue; the actual belief shift is computed using **Asch-calibrated conformity pressure** grounded in the experimental literature.
+
+Each agent maintains a `conversation_history` — every neighbor who has spoken to them and the direction they pushed. This accumulates across ticks, capturing the "gaslighting" effect: repeated unanimous pressure from multiple distinct sources erodes belief over time.
+
+**Asch pressure formula (Asch 1951/1956; Allen & Levine 1968):**
 ```
-pressure_shift = sum_over_neighbors(neighbor_delta × edge_trust × my_conformity) × (1 - identity_attachment) × decay
+n_unanimous = count of DISTINCT neighbors who pushed same direction (history + current)
+base_rate   = {1: 3%, 2: 13%, 3: 32%, 4+: up to 37%}  ← Asch experimental rates
+ally_factor = 0.17 if ANY past voice pushed opposite direction   ← Allen & Levine ally effect
+             else 1.0
+
+conformity_pressure = base_rate × ally_factor × agent.conformity × (1 - identity_attachment)
+actual_shift = LLM_raw_shift × conformity_pressure
 ```
-Pressure cascades 1–2 hops per tick. Beliefs propagate outward through the network.
+
+**Key dynamics:**
+- First conversation: 3% base — a single voice rarely breaks you
+- Second conversation from a different neighbor, same direction: 13%
+- Third unique voice, same direction: 32% — the Asch plateau kicks in
+- Even one dissenting voice anywhere in history drops pressure to ~5.5%
+
+High-conformity agents in Phase 2 are the primary source of surface compliance. They shift under unanimous social pressure without ever processing an argument — the probe catches them.
 
 ### End — The Probe
 Every agent past a shift threshold gets asked a probe question — a related-but-different question that requires the underlying belief to have shifted, not just surface agreement. Genuine shifters answer coherently; surface shifters reveal inconsistency.
