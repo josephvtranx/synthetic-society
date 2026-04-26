@@ -1,6 +1,6 @@
 # Synthetic Society
 
-HackTech 2026 — Listen Labs "Simulate Humanity" track. A playable simulation where you inject one argument into a society of 25 AI agents and watch belief spread through a trust network. At the end, we measure what fraction of apparent belief change is genuine vs. surface compliance.
+HackTech 2026 — Listen Labs "Simulate Humanity" track. A playable simulation where you inject arguments into a society of 25 AI agents and watch belief spread through a trust network. At the end, a probe mechanic measures what fraction of apparent belief change is genuine vs. surface compliance.
 
 ## Core Thesis
 Belief change has two distinct mechanisms:
@@ -16,106 +16,129 @@ Listen Labs makes AI-moderated user research tools. Their core problem is trust.
 
 ## Stack
 - **Frontend:** Next.js App Router, TypeScript strict mode, Tailwind, shadcn/ui, Zustand, react-force-graph-2d
-- **Backend:** Python FastAPI, WebSocket for real-time state streaming
-- **LLM:** Anthropic (Haiku for agent updates, Sonnet for probe)
+- **Backend:** Python FastAPI, stateful session model
+- **LLM:** Anthropic (Haiku for agent conversations, Sonnet for probe)
 - **Graph:** NetworkX on backend
 
 ## Agent Model (canonical — do not drift)
 
-### Personality (fixed traits)
-- `openness` — receptivity to arguments; drives Phase 1 magnitude
-- `analytical` — central vs. peripheral processing; modulates what kind of arguments work
-- `conformity` — susceptibility to social pressure; drives Phase 2 magnitude
-- `identity_attachment` — how much belief is tied to identity; dampens both phases when high
+### Personality (fixed traits, sampled at init)
+- `openness` — receptivity to arguments; drives ELM elaboration and resistance to peer pressure
+- `analytical` — maps to NFC (need for cognition); determines central vs. peripheral route
+- `conformity` — susceptibility to social pressure; drives Asch peer pressure magnitude
+- `identity_attachment` — how much belief is tied to identity; dampens all deltas when high
 
-### State (evolves during sim)
-- `belief` — current position, -1 to 1
-- `confidence` — how settled, 0 to 1; affects resistance and probe stability
+### State (evolves each tick)
+- `position` — current belief, −1 to +1
+- `confidence` — how settled, 0 to 1; contributes to identity resistance
 
 ### Per-edge parameter
-- `trust` — directional, asymmetric. How much A weights B's input. Computed once at init from demographic similarity.
+- `trust` — 0–1, evolves every tick. Initialized from opinion similarity + cluster membership.
+  Grows with productive exchange, decays with friction or silence, deleted when it falls below 0.05.
+  New edges form via triadic closure (friend-of-a-friend).
 
 ### Cut parameters
 - ~~agreeableness~~ — redundant with conformity
-- ~~influence_score~~ — should emerge from network structure (degree, bridgeness), not be a parameter
+- ~~influence_score~~ — emerges from network structure (degree, bridgeness), not a parameter
 
 ## Network
 - 25 agents in 4 clusters (blue-collar, educators, young professionals, small business owners)
-- Dense within-cluster edges (4–6 connections each)
-- Sparse between-cluster edges (1–3 per cluster pair) — these create bridge nodes
-- Trust on each edge derived from demographic similarity, not random
-- Initial beliefs sampled from cluster-specific distributions with variance (clusters are not internally uniform)
-- Bridge nodes emerge from graph structure, not from a stat
+- Dense within-cluster edges, sparse between-cluster edges — bridge nodes emerge naturally
+- Trust on each edge initialized from opinion_sim (0.35) + cluster_sim (0.25) + ingroup bonus + baseline 0.10
+- Initial beliefs sampled from cluster-specific distributions with variance
 
-## Game Loop (single-message version)
+## Game Loop (interactive)
 
 ### Setup
-1. Generate 25 agents with cluster-sampled personalities
-2. Build clustered small-world graph
-3. Compute trust on every edge
-4. Initialize beliefs from cluster priors
+1. `POST /populate` — generates 25 agents + graph, caches for reuse
+2. `POST /sim/create` — creates a session, returns `sim_id` + initial state
 
-### Turn 0 — Player's only move
-Player picks one agent and writes one argument message.
+### Inject (any time, any tick)
+Player picks any agent and writes an argument. `POST /sim/{id}/inject` applies the belief update immediately.
 
-### Turn 0 — Phase 1 (LLM)
-The targeted agent's personality + belief + the argument go to the LLM (Haiku). LLM produces a raw belief shift. The shift gets clamped:
 ```
-actual_shift = raw_shift × openness × source_trust × (1 - identity_attachment) × (1 - confidence × resistance_factor)
+arg classified by LLM → arg_type, arg_quality (0–1), arg_position (−1 to +1)
+
+delta_arg  = ELM formula (see below)
+delta_peer = Asch formula from current neighborhood
+actual     = (delta_arg + delta_peer) × (1 − id_resist × 0.8)
+             where id_resist = identity_attachment × 0.7 + confidence × 0.3
 ```
 
-### Turns 1–20 — Phase 2 (LLM conversation + Asch conformity shift)
-Shifted agents have conversations with unconvinced neighbors. The LLM generates the dialogue; the actual belief shift is computed using **Asch-calibrated conformity pressure** grounded in the experimental literature.
+### Tick (advance when ready)
+`POST /sim/{id}/next_tick` — each agent randomly tries to converse with one neighbor.
 
-Each agent maintains a `conversation_history` — every neighbor who has spoken to them and the direction they pushed. This accumulates across ticks, capturing the "gaslighting" effect: repeated unanimous pressure from multiple distinct sources erodes belief over time.
+**Pairing:** agents shuffle, each picks one available neighbor. No double-booking. Leftover agents sit out.
 
-**Asch pressure formula (Asch 1951/1956; Allen & Levine 1968):**
+**Per conversation (A speaks, B listens):**
 ```
-n_unanimous = count of DISTINCT neighbors who pushed same direction (history + current)
-base_rate   = {1: 3%, 2: 13%, 3: 32%, 4+: up to 37%}  ← Asch experimental rates
-ally_factor = 0.17 if ANY past voice pushed opposite direction   ← Allen & Levine ally effect
-             else 1.0
+LLM generates: A's message, A's arg_type + arg_quality
+               B's response, B's arg_type + arg_quality
 
-conformity_pressure = base_rate × ally_factor × agent.conformity × (1 - identity_attachment)
-actual_shift = LLM_raw_shift × conformity_pressure
+B's delta = ELM(B, A's argument) + Asch(B's neighborhood) → apply identity resistance
+A's delta = ELM(A, B's response) + Asch(A's neighborhood) → apply identity resistance
+```
+
+### ELM Formula (Petty & Cacioppo 1986)
+```python
+elab = analytical × 0.4 + salience × 0.3 + openness × 0.3
+
+d_central = arg_quality × 0.18 × (arg_position − position)
+d_periph  = 0.75       × 0.12 × (arg_position − position)  # source_cred = 0.75 (trust=1)
+
+type_mult = {evidence: 0.5+analytical×0.5, social: 0.3+conformity×0.7,
+             emotional: 0.65, repetition: 1.0−analytical×0.5}[arg_type]
+
+cb_damp   = 1 − (1−openness) × alignment × 0.6  # confirmation bias
+delta_arg = (elab×d_central + (1−elab)×d_periph) × type_mult × cb_damp
+```
+
+### Asch Formula (Asch 1951/1956; Allen & Levine 1968)
+```python
+opp_ratio = fraction of neighbors with opposing sign position
+has_ally  = any neighbor agrees with agent's sign
+u_mult    = 6.4 if not has_ally else 1.0   # single ally cuts pressure ~6×
+suscept   = 0.40×(1−openness) + 0.25×conformity + 0.10 + 0.15×(1−analytical)
+p_update  = min(0.32 × opp_ratio × u_mult × suscept, 0.80)
+delta_peer = (neighbor_mean − position) × 0.08  if rand < p_update else 0
 ```
 
 **Key dynamics:**
-- First conversation: 3% base — a single voice rarely breaks you
-- Second conversation from a different neighbor, same direction: 13%
-- Third unique voice, same direction: 32% — the Asch plateau kicks in
-- Even one dissenting voice anywhere in history drops pressure to ~5.5%
-
-High-conformity agents in Phase 2 are the primary source of surface compliance. They shift under unanimous social pressure without ever processing an argument — the probe catches them.
+- No ally + full opposition: up to 80% chance of peer pressure update per conversation
+- Single ally present: pressure drops ~6× (Allen & Levine 1968)
+- High-conformity, low-openness agents are the primary source of surface compliance
 
 ### End — The Probe
-Every agent past a shift threshold gets asked a probe question — a related-but-different question that requires the underlying belief to have shifted, not just surface agreement. Genuine shifters answer coherently; surface shifters reveal inconsistency.
+`POST /sim/{id}/probe` — every agent past threshold gets a follow-up question requiring structural belief application. Genuine shifters answer coherently; surface shifters reveal inconsistency.
 
 ## Probe Design
-The probe must require the agent to apply their new belief to a novel scenario. Surface-compliant agents fail because they only nodded along; they never updated the underlying model.
+The probe must require the agent to apply their new belief to a novel scenario.
 
-**Bad probes** (too close — surface compliance passes them):
+**Bad probes** (surface compliance passes):
 - "Should min wage be raised to $14?" (same surface features)
 
 **Good probes** (require structural belief change):
-- "If a small business owner says they'll have to lay off two workers when min wage rises, what should policy do?"
-- "Should states with low costs of living be allowed to set min wages below the federal level?"
+- "If a small business owner says they'll lay off two workers when min wage rises, what should policy do?"
+- "Should states with low costs of living be allowed to set minimum wages below the federal level?"
 
-Pre-write 3–4 probe pairs per topic. Test them: would a peer-pressured agent give a coherent answer? If yes, probe is too easy.
+## API Summary
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /populate` | Generate preview society, cache |
+| `POST /sim/create` | Start session → `sim_id` |
+| `POST /sim/{id}/inject` | User injects argument to any agent |
+| `POST /sim/{id}/next_tick` | Advance one tick (random pairings) |
+| `GET  /sim/{id}/state` | Current state + full tick history |
+| `POST /sim/{id}/probe` | Run genuine/surface probe |
 
 ## Hard Rules
-- All LLM calls use structured outputs. Never parse free text.
-- Cap belief deltas in post-processing — don't trust the LLM to bound them.
-- 25 agents per sim. One issue per sim. Fixed personalities, only beliefs evolve.
+- All LLM calls use structured JSON outputs. Never parse free text.
+- Cap belief deltas in post-processing — never let the LLM compute the number.
+- 25 agents per sim. One topic per sim. Fixed personalities, only beliefs evolve.
 - Sim state is plain serializable objects.
+- Trust is dynamic: initialized from opinion similarity + cluster, updated after each conversation,
+  decays ×0.998/tick, edges pruned below 0.05, new edges form via triadic closure.
 - Do not add features, refactor, or "improve" beyond what was asked.
-
-## Frontend Architecture (see docs/frontend-architecture.md)
-- Frontend is a **playback engine** — backend runs all 20 ticks in one shot, returns a complete timeline array
-- Frontend plays it back tick-by-tick with animations, no real-time sync
-- Rewind/replay/scrub for free — timeline is just an array
-- Probe results are pre-computed, revealed after final tick
-- Force graph with expressive nodes (faces, color lerps, pulse effects, edge flashes, speech bubbles)
 
 ## Design Docs
 - [Tick Mechanics](docs/tick-mechanics.md)
