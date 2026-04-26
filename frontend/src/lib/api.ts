@@ -1,4 +1,4 @@
-import type { AgentData, EdgeData, TickSnapshot, InjectResult, ProbeResult } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, InjectResult, ProbeResult, Headline } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -117,6 +117,24 @@ export async function getState(simId: string) {
 
   if (!res.ok) {
     throw new Error(`Get state failed: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function generateHeadline(
+  simId: string,
+  genuine: number = 0,
+  surface: number = 0,
+): Promise<Headline> {
+  const res = await fetch(`${API_URL}/sim/${simId}/headline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ genuine, surface }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Headline generation failed: ${res.statusText}`);
   }
 
   return res.json();

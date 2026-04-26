@@ -11,17 +11,23 @@ Endpoints:
 """
 from __future__ import annotations
 
+import os
 import uuid
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from backend/ dir regardless of cwd
+_backend_dir = Path(__file__).resolve().parent
+load_dotenv(_backend_dir / ".env")
+# Also try project root
+load_dotenv(_backend_dir.parent / ".env")
 
 logger = logging.getLogger("sim")
 
@@ -341,6 +347,93 @@ async def run_probe(sim_id: str, body: dict = {}):
             "genuine":       genuine,
             "surface":       len(shifted) - genuine,
         },
+    }
+
+
+# ── /sim/{id}/headline ───────────────────────────────────────────────────────
+@app.post("/sim/{sim_id}/headline")
+async def generate_headline(sim_id: str, body: dict = {}):
+    """
+    Generate a newspaper headline + subheadline summarizing the simulation outcome.
+    Call after probing — uses shift data, genuine/surface counts, and overton shift.
+    """
+    session = _sessions.get(sim_id)
+    if not session:
+        raise HTTPException(404, f"Session '{sim_id}' not found")
+
+    from simulate import _get_client, PROBE_MODEL, _extract_json
+
+    # Gather stats
+    original = session.original_positions
+    shifted_agents = [
+        a for a in session.agents.values()
+        if abs(a.position - original.get(a.id, a.position)) > 0.05
+    ]
+    total_shifted = len(shifted_agents)
+
+    # Mean shift direction
+    shifts = [a.position - original.get(a.id, a.position) for a in shifted_agents]
+    mean_shift = sum(shifts) / len(shifts) if shifts else 0
+
+    # Compute simple overton from current positions
+    positions = sorted(a.position for a in session.agents.values())
+    n = len(positions)
+    trim = max(1, int(n * 0.15))
+    trimmed = positions[trim:n - trim]
+    overton_center = sum(trimmed) / len(trimmed) if trimmed else 0
+
+    # Get probe summary if passed in body
+    genuine = body.get("genuine", 0)
+    surface = body.get("surface", 0)
+
+    # Collect events from history
+    events = [h.get("event", {}).get("headline", "") for h in session.history if h.get("event")]
+    events_text = "; ".join(events[:5]) if events else "no major events"
+
+    client = _get_client()
+    if client:
+        try:
+            response = await client.messages.create(
+                model=PROBE_MODEL,
+                max_tokens=200,
+                system=(
+                    "You are a newspaper editor writing a front-page headline about a social shift "
+                    "in a community. Based on the simulation data, write:\n"
+                    "1. A punchy, dramatic headline (under 12 words, ALL CAPS)\n"
+                    "2. A subheadline (1 sentence, normal case, adds context)\n"
+                    "3. A one-sentence editorial note about whether the change seems genuine\n\n"
+                    "Match the tone to the data — big shifts get dramatic headlines, "
+                    "small shifts get subtle ones. If most change is surface compliance, "
+                    "hint at skepticism.\n\n"
+                    'Return ONLY valid JSON: {"headline": "...", "subheadline": "...", "editorial": "..."}'
+                ),
+                messages=[{"role": "user", "content": (
+                    f"Topic: {session.topic}\n"
+                    f"Community size: {len(session.agents)}\n"
+                    f"Total who shifted: {total_shifted}/{len(session.agents)}\n"
+                    f"Mean shift direction: {mean_shift:+.3f} ({'toward support' if mean_shift > 0 else 'toward opposition'})\n"
+                    f"Genuine belief changes: {genuine}\n"
+                    f"Surface compliance only: {surface}\n"
+                    f"Overton window center: {overton_center:.2f}\n"
+                    f"Ticks elapsed: {session.tick}\n"
+                    f"Notable events: {events_text}"
+                )}],
+            )
+            result = _extract_json(response.content[0].text)
+            return {
+                "headline":    result.get("headline", "COMMUNITY OPINION SHIFTS"),
+                "subheadline": result.get("subheadline", ""),
+                "editorial":   result.get("editorial", ""),
+            }
+        except Exception as e:
+            logger.error(f"Headline generation error: {e}")
+
+    # Fallback
+    direction = "IN FAVOR" if mean_shift > 0 else "AGAINST"
+    return {
+        "headline":    f"COMMUNITY OPINION SHIFTS {direction} ON {session.topic.upper()[:30]}",
+        "subheadline": f"{total_shifted} of {len(session.agents)} residents changed their stance over {session.tick} rounds of discussion.",
+        "editorial":   f"Of those who shifted, {genuine} appear genuine while {surface} may be surface-level conformity.",
     }
 
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, InfluenceAction, OvertonWindow } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, InfluenceAction, OvertonWindow, Headline } from "./types";
 import { INFLUENCE_BUDGET, COST_SCOUT, COST_INJECT, OVERTON_PERCENTILE } from "./types";
 
 type Screen = "setup" | "playback" | "debrief";
@@ -23,6 +23,7 @@ type SimStore = {
   injectResults: InjectResult[];
   probeResults: ProbeResult[];
   probeSummary: { total_shifted: number; genuine: number; surface: number } | null;
+  headline: Headline | null;
 
   // Playback state
   currentTick: number;
@@ -44,6 +45,7 @@ type SimStore = {
   addInjectResult: (result: InjectResult, targetId: string) => void;
   addTick: (snapshot: TickSnapshot) => void;
   setProbeResults: (results: ProbeResult[], summary: { total_shifted: number; genuine: number; surface: number }) => void;
+  setHeadline: (headline: Headline) => void;
   setCurrentTick: (tick: number) => void;
   setPlaying: (playing: boolean) => void;
   setSpeed: (speed: PlaybackSpeed) => void;
@@ -67,6 +69,7 @@ export const useSimStore = create<SimStore>((set) => ({
   injectResults: [],
   probeResults: [],
   probeSummary: null,
+  headline: null,
   currentTick: 0,
   playing: false,
   speed: 1,
@@ -151,6 +154,7 @@ export const useSimStore = create<SimStore>((set) => ({
 
   setProbeResults: (results, summary) =>
     set({ probeResults: results, probeSummary: summary }),
+  setHeadline: (headline) => set({ headline }),
 
   setCurrentTick: (tick) => set({ currentTick: tick }),
   setPlaying: (playing) => set({ playing }),
@@ -192,6 +196,7 @@ export const useSimStore = create<SimStore>((set) => ({
       injectResults: [],
       probeResults: [],
       probeSummary: null,
+      headline: null,
       currentTick: 0,
       playing: false,
       selectedAgentId: null,

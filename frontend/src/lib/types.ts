@@ -43,6 +43,14 @@ export type Conversation = {
   tick: number;
 };
 
+// Breaking event that occurs during a tick
+export type SimEvent = {
+  type: string;
+  headline: string;
+  affected_agents: string[];
+  tick: number;
+};
+
 // Snapshot of the sim at one tick
 export type TickSnapshot = {
   tick: number;
@@ -53,6 +61,14 @@ export type TickSnapshot = {
   n_unpaired?: number;
   trust_changes?: { removed: number; added: number };
   edges?: EdgeData[];
+  event?: SimEvent;
+};
+
+// Newspaper headline for debrief
+export type Headline = {
+  headline: string;
+  subheadline: string;
+  editorial: string;
 };
 
 // Probe results after sim completes

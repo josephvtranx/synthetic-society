@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSimStore, useProbeResults, useCurrentAgents, useOvertonWindow, useInitialOvertonWindow } from "@/lib/store";
-import { runProbe } from "@/lib/api";
+import { runProbe, generateHeadline } from "@/lib/api";
 import { BG, CARD, TEXT_PRIMARY, TEXT_MUTED } from "@/lib/colors";
 import { INFLUENCE_BUDGET } from "@/lib/types";
 
@@ -11,6 +11,8 @@ export default function DebriefScreen() {
   const probeResults = useProbeResults();
   const probeSummary = useSimStore((s) => s.probeSummary);
   const setProbeResults = useSimStore((s) => s.setProbeResults);
+  const headline = useSimStore((s) => s.headline);
+  const setHeadline = useSimStore((s) => s.setHeadline);
   const agents = useCurrentAgents();
   const selectAgent = useSimStore((s) => s.selectAgent);
   const reset = useSimStore((s) => s.reset);
@@ -20,16 +22,21 @@ export default function DebriefScreen() {
   const overton = useOvertonWindow();
   const initialOverton = useInitialOvertonWindow();
 
-  // Fetch probe results on mount if we don't have them yet
+  // Fetch probe results on mount, then headline
   useEffect(() => {
     if (!simId || probeResults.length > 0 || probing) return;
     setProbing(true);
     runProbe(simId)
       .then((res) => {
         setProbeResults(res.probe_results, res.summary);
+        // Now fetch the headline with probe data
+        return generateHeadline(simId, res.summary.genuine, res.summary.surface);
+      })
+      .then((h) => {
+        setHeadline(h);
       })
       .catch((e) => {
-        console.error("Probe failed:", e);
+        console.error("Probe/headline failed:", e);
       })
       .finally(() => setProbing(false));
   }, [simId]);
@@ -52,16 +59,46 @@ export default function DebriefScreen() {
   const windowShift = overton && initialOverton ? overton.center - initialOverton.center : 0;
   const genuineProbes = probeResults.filter((p) => p.shifted && p.genuine);
   const surfaceProbes = probeResults.filter((p) => p.shifted && !p.genuine);
+  const ticks = useSimStore((s) => s.ticks);
+  const events = ticks.filter((t) => t.event).map((t) => t.event!);
 
   return (
     <div className="flex-1 overflow-y-auto py-10 px-8" style={{ background: BG }}>
       <div className="max-w-2xl mx-auto space-y-8">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold uppercase tracking-widest" style={{ color: TEXT_PRIMARY, ...mono }}>
-            what was real?
-          </h1>
+        {/* Newspaper headline */}
+        {headline ? (
+          <div className="text-center space-y-3 pb-2" style={{ borderBottom: `3px double ${TEXT_PRIMARY}` }}>
+            <div className="text-xs uppercase tracking-[0.3em] font-bold" style={{ color: TEXT_MUTED, ...mono }}>
+              the daily synthetic
+            </div>
+            <h1 className="text-xl font-black uppercase leading-tight tracking-wide" style={{ color: TEXT_PRIMARY, ...mono }}>
+              {headline.headline}
+            </h1>
+            {headline.subheadline && (
+              <p className="text-sm leading-relaxed" style={{ color: TEXT_PRIMARY, ...mono }}>
+                {headline.subheadline}
+              </p>
+            )}
+            {headline.editorial && (
+              <p className="text-xs italic" style={{ color: TEXT_MUTED, ...mono }}>
+                Editorial: {headline.editorial}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="text-center space-y-2">
+            <h1 className="text-2xl font-bold uppercase tracking-widest" style={{ color: TEXT_PRIMARY, ...mono }}>
+              what was real?
+            </h1>
+            <p className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
+              {summary.total_shifted} shifted
+            </p>
+          </div>
+        )}
+
+        <div className="text-center">
           <p className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
-            {summary.total_shifted} shifted
+            {summary.total_shifted} shifted — what was real?
           </p>
         </div>
 
@@ -133,6 +170,33 @@ export default function DebriefScreen() {
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Events timeline */}
+        {events.length > 0 && (
+          <div className="p-4" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
+            <div className="text-xs mb-3 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
+              events ({events.length})
+            </div>
+            <div className="space-y-2">
+              {events.map((ev, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="text-xs font-bold shrink-0 w-10 text-right pt-0.5"
+                    style={{ color: TEXT_MUTED, ...mono, fontSize: "9px" }}>
+                    T{ev.tick}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-bold leading-relaxed" style={{ color: TEXT_PRIMARY, ...mono }}>
+                      {ev.headline}
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: TEXT_MUTED, ...mono, fontSize: "9px" }}>
+                      {ev.affected_agents.length} affected — {ev.type.replace("_", " ")}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

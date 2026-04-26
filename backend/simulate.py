@@ -50,6 +50,190 @@ def _get_client():
     return _client
 
 
+# ── Breaking events ──────────────────────────────────────────────────────────
+EVENT_CHANCE_PER_TICK = 0.30  # ~30% chance each tick (roughly every 3 ticks)
+
+EVENT_TEMPLATES = [
+    {
+        "type": "viral_video",
+        "headline": "A viral video surfaces showing {scenario}",
+        "effect": "nudge",       # small push on random agents
+        "magnitude": 0.06,
+        "reach": 0.3,            # fraction of agents affected
+    },
+    {
+        "type": "leader_switch",
+        "headline": "A respected community leader publicly changes their stance",
+        "effect": "flip_leader",  # one high-trust agent gets a big nudge
+        "magnitude": 0.12,
+        "reach": 0.04,
+    },
+    {
+        "type": "news_report",
+        "headline": "Breaking: New study released with {findings}",
+        "effect": "nudge",
+        "magnitude": 0.05,
+        "reach": 0.4,
+    },
+    {
+        "type": "personal_story",
+        "headline": "A personal story goes viral: \"{story}\"",
+        "effect": "emotional",
+        "magnitude": 0.08,
+        "reach": 0.25,
+    },
+    {
+        "type": "economic_shock",
+        "headline": "Economic report reveals {impact} — people are rattled",
+        "effect": "nudge",
+        "magnitude": 0.07,
+        "reach": 0.5,
+    },
+    {
+        "type": "protest",
+        "headline": "A protest breaks out in the community over {issue}",
+        "effect": "polarize",    # pushes people further from center
+        "magnitude": 0.05,
+        "reach": 0.35,
+    },
+    {
+        "type": "scandal",
+        "headline": "Scandal: A prominent advocate is caught {scandal}",
+        "effect": "backlash",    # pushes people AWAY from the scandal side
+        "magnitude": 0.09,
+        "reach": 0.4,
+    },
+]
+
+
+async def _generate_event(topic: str, tick: int) -> dict | None:
+    """
+    Maybe generate a breaking event this tick. Returns event dict or None.
+    Uses LLM to fill in topic-specific details for the template.
+    """
+    if random.random() > EVENT_CHANCE_PER_TICK:
+        return None
+
+    template = random.choice(EVENT_TEMPLATES)
+    client = _get_client()
+    headline = template["headline"]
+
+    # Fill in template placeholders with topic-specific content
+    if client and "{" in headline:
+        try:
+            response = await client.messages.create(
+                model=FAST_MODEL,
+                max_tokens=60,
+                system=(
+                    "Fill in the blank for a breaking news event about this topic. "
+                    "Return ONLY the fill-in text, no quotes, under 15 words. "
+                    "Be specific and dramatic."
+                ),
+                messages=[{"role": "user", "content": (
+                    f"Topic: {topic}\n"
+                    f"Template: {headline}\n"
+                    f"Fill in the {{bracketed}} part only."
+                )}],
+            )
+            fill = response.content[0].text.strip().strip('"')
+            # Replace first placeholder
+            import re as _re
+            headline = _re.sub(r"\{[^}]+\}", fill, headline, count=1)
+        except Exception as e:
+            logger.error(f"Event headline fill error: {e}")
+            # Use template as-is with placeholder removed
+            headline = headline.replace("{", "").replace("}", "")
+
+    event = {
+        "type": template["type"],
+        "headline": headline,
+        "effect": template["effect"],
+        "magnitude": template["magnitude"],
+        "reach": template["reach"],
+        "tick": tick,
+        "affected_agents": [],
+    }
+
+    logger.info(f"  EVENT [{template['type']}]: {headline}")
+    return event
+
+
+def _apply_event(event: dict, agents: dict, graph) -> list[dict]:
+    """
+    Apply a breaking event's effect to agents. Returns list of shifts caused.
+    """
+    shifts = []
+    agent_list = list(agents.values())
+    n_affected = max(1, int(len(agent_list) * event["reach"]))
+    effect = event["effect"]
+    mag = event["magnitude"]
+
+    if effect == "flip_leader":
+        # Find the agent with highest degree (most connections)
+        degrees = [(a.id, graph.degree(a.id)) for a in agent_list if graph.has_node(a.id)]
+        if degrees:
+            degrees.sort(key=lambda x: -x[1])
+            leader_id = degrees[0][0]
+            leader = agents[leader_id]
+            old_pos = leader.position
+            # Push toward opposite side
+            direction = -1 if leader.position > 0 else 1
+            delta = direction * mag * (1 - leader.identity_attachment * 0.5)
+            leader.position = max(-1.0, min(1.0, leader.position + delta))
+            actual = leader.position - old_pos
+            if abs(actual) > 0.001:
+                shifts.append({"agent_id": leader_id, "delta": round(actual, 4),
+                               "new_position": round(leader.position, 4), "source": "event"})
+                event["affected_agents"] = [leader_id]
+                logger.info(f"    Leader flip: {leader.name} {old_pos:.3f}→{leader.position:.3f}")
+    elif effect == "polarize":
+        # Push people further from center
+        targets = random.sample(agent_list, min(n_affected, len(agent_list)))
+        for agent in targets:
+            old_pos = agent.position
+            direction = 1 if agent.position > 0 else (-1 if agent.position < 0 else random.choice([-1, 1]))
+            delta = direction * mag * (1 - agent.openness * 0.4)
+            agent.position = max(-1.0, min(1.0, agent.position + delta))
+            actual = agent.position - old_pos
+            if abs(actual) > 0.001:
+                shifts.append({"agent_id": agent.id, "delta": round(actual, 4),
+                               "new_position": round(agent.position, 4), "source": "event"})
+        event["affected_agents"] = [a.id for a in targets]
+    elif effect == "backlash":
+        # Push people away from one side (randomly chosen)
+        backlash_against = random.choice([-1, 1])
+        targets = random.sample(agent_list, min(n_affected, len(agent_list)))
+        for agent in targets:
+            old_pos = agent.position
+            delta = -backlash_against * mag * (1 - agent.identity_attachment * 0.5)
+            agent.position = max(-1.0, min(1.0, agent.position + delta))
+            actual = agent.position - old_pos
+            if abs(actual) > 0.001:
+                shifts.append({"agent_id": agent.id, "delta": round(actual, 4),
+                               "new_position": round(agent.position, 4), "source": "event"})
+        event["affected_agents"] = [a.id for a in targets]
+    else:
+        # Default nudge / emotional: push random subset in a random direction
+        direction = random.choice([-1, 1])
+        targets = random.sample(agent_list, min(n_affected, len(agent_list)))
+        for agent in targets:
+            old_pos = agent.position
+            # Openness and conformity modulate susceptibility
+            suscept = 0.5 + agent.conformity * 0.3 + agent.openness * 0.2
+            delta = direction * mag * suscept
+            if effect == "emotional":
+                delta *= (1.2 - agent.analytical * 0.4)  # emotional hits non-analytical harder
+            agent.position = max(-1.0, min(1.0, agent.position + delta))
+            actual = agent.position - old_pos
+            if abs(actual) > 0.001:
+                shifts.append({"agent_id": agent.id, "delta": round(actual, 4),
+                               "new_position": round(agent.position, 4), "source": "event"})
+        event["affected_agents"] = [a.id for a in targets]
+
+    logger.info(f"    Event affected {len(event['affected_agents'])} agents, {len(shifts)} shifted")
+    return shifts
+
+
 # ── Trust constants ───────────────────────────────────────────────────────────
 MIN_TRUST = 0.05          # edge removed when trust falls below this
 NEW_EDGE_TRUST = 0.10     # starting trust for triadic-closure-formed edges
@@ -106,26 +290,81 @@ def _get_probe_question(topic: str) -> str:
     return random.choice(questions)
 
 
+# ── Personality descriptors ──────────────────────────────────────────────────
+def _describe_personality(agent: Agent) -> str:
+    """
+    Translate numeric traits into a narrative personality sketch.
+    Gives the LLM something to role-play with instead of raw numbers.
+    """
+    parts = []
+
+    # Openness
+    if agent.openness > 0.7:
+        parts.append("genuinely curious and open to new ideas")
+    elif agent.openness > 0.4:
+        parts.append("willing to listen but cautious about changing their mind")
+    else:
+        parts.append("deeply skeptical of new ideas and set in their ways")
+
+    # Analytical
+    if agent.analytical > 0.7:
+        parts.append("demands hard evidence and picks apart weak reasoning")
+    elif agent.analytical > 0.4:
+        parts.append("can follow a logical argument but also swayed by stories")
+    else:
+        parts.append("trusts gut feelings and personal experience over data")
+
+    # Conformity
+    if agent.conformity > 0.7:
+        parts.append("cares a lot about what their peers think")
+    elif agent.conformity > 0.4:
+        parts.append("somewhat influenced by social pressure")
+    else:
+        parts.append("doesn't care what others think, speaks their mind freely")
+
+    # Identity attachment
+    if agent.identity_attachment > 0.7:
+        parts.append("this issue is deeply personal to their identity")
+    elif agent.identity_attachment > 0.4:
+        parts.append("has some personal stake in this issue")
+    else:
+        parts.append("sees this as an intellectual question, not a personal one")
+
+    # Confidence
+    if agent.confidence > 0.7:
+        parts.append("very sure of their current view")
+    elif agent.confidence > 0.4:
+        parts.append("moderately confident but has some doubts")
+    else:
+        parts.append("uncertain and still figuring out what they believe")
+
+    return ". ".join(parts) + "."
+
+
 # ── Stance generation ─────────────────────────────────────────────────────────
 async def generate_stance(agent: Agent, topic: str) -> str:
-    """One-sentence internal belief for an agent."""
+    """Generate a rich internal belief grounded in the agent's life experience."""
     client = _get_client()
+    personality = _describe_personality(agent)
     if client:
         try:
             response = await client.messages.create(
                 model=FAST_MODEL,
-                max_tokens=60,
+                max_tokens=150,
                 system=(
-                    "Generate a person's internal belief as a single casual sentence in first person. "
-                    "Under 15 words. Match position: negative=against, positive=for, near zero=unsure. "
-                    "Return ONLY the sentence, no quotes, no JSON."
+                    "Generate a person's internal belief about the topic in first person. "
+                    "2-3 sentences. Ground it in a specific life experience, memory, or observation "
+                    "that explains WHY they hold this view — not just what they believe. "
+                    "Match their position: negative=against, positive=for, near zero=conflicted. "
+                    "Write in their natural voice (casual, not academic). "
+                    "Return ONLY the text, no quotes, no JSON."
                 ),
                 messages=[{"role": "user", "content": (
                     f"Topic: {topic}\n"
                     f"Person: {agent.name}, age {agent.age}, "
                     f"{agent.group_ids[0] if agent.group_ids else 'general'}\n"
                     f"Position: {agent.position:.2f} (-1=strongly against, 1=strongly for)\n"
-                    f"Openness: {agent.openness:.1f}, Analytical: {agent.analytical:.1f}"
+                    f"Personality: {personality}"
                 )}],
             )
             return response.content[0].text.strip().strip('"')
@@ -392,6 +631,8 @@ async def generate_agent_conversation(
     client = _get_client()
     speaker_stance = stances.get(speaker.id, f"position {speaker.position:+.2f}")
     listener_stance = stances.get(listener.id, f"position {listener.position:+.2f}")
+    speaker_personality = _describe_personality(speaker)
+    listener_personality = _describe_personality(listener)
 
     # Default dialogue + types in case LLM fails
     speaker_message = f"I think you should consider: {topic}."
@@ -403,14 +644,24 @@ async def generate_agent_conversation(
         try:
             t0 = time.time()
             response = await client.messages.create(
-                model=FAST_MODEL,
-                max_tokens=500,
+                model=PROBE_MODEL,
+                max_tokens=800,
                 system=(
-                    f"Simulate a realistic two-person conversation about: {topic}\n"
-                    "Each person speaks in their own voice and argues from their actual position. "
-                    "SPEAKER goes first; LISTENER responds. Keep each turn to 1-3 sentences.\n\n"
-                    "Classify each person's argument type:\n"
-                    "  type: evidence | social | emotional | repetition\n\n"
+                    f"Simulate a realistic conversation between two people about: {topic}\n\n"
+                    "RULES:\n"
+                    "- Each person speaks 3-5 sentences in their natural voice\n"
+                    "- They should reference specific personal experiences, anecdotes, or concrete examples\n"
+                    "- They should ACTUALLY ENGAGE with each other — push back, ask pointed questions, "
+                    "concede specific points, or double down with real reasons\n"
+                    "- Avoid generic platitudes like 'that's interesting' or 'I see your point' — "
+                    "make them argue like real people who care about this topic\n"
+                    "- If they disagree, show the tension. If they agree, show them building on each other's ideas\n"
+                    "- Their personality traits should shape HOW they argue, not just WHAT they say\n\n"
+                    "Classify each person's PRIMARY argument strategy:\n"
+                    "  evidence = cites facts, data, studies, specific outcomes\n"
+                    "  social = appeals to norms, what others think, community standards\n"
+                    "  emotional = appeals to values, fairness, personal impact, moral weight\n"
+                    "  repetition = restates existing position without new substance\n\n"
                     "Return ONLY valid JSON:\n"
                     '{"speaker_message": "...", '
                     '"speaker_arg_type": "evidence|social|emotional|repetition", '
@@ -421,14 +672,11 @@ async def generate_agent_conversation(
                     f"SPEAKER: {speaker.name}, age {speaker.age}, "
                     f"{speaker.group_ids[0] if speaker.group_ids else 'general'}\n"
                     f"  Position: {speaker.position:+.2f}  |  View: \"{speaker_stance}\"\n"
-                    f"  Openness: {speaker.openness:.2f}, Analytical: {speaker.analytical:.2f}, "
-                    f"Conformity: {speaker.conformity:.2f}\n\n"
+                    f"  Personality: {speaker_personality}\n\n"
                     f"LISTENER: {listener.name}, age {listener.age}, "
                     f"{listener.group_ids[0] if listener.group_ids else 'general'}\n"
                     f"  Position: {listener.position:+.2f}  |  View: \"{listener_stance}\"\n"
-                    f"  Openness: {listener.openness:.2f}, Analytical: {listener.analytical:.2f}, "
-                    f"Confidence: {listener.confidence:.2f}, "
-                    f"Identity attachment: {listener.identity_attachment:.2f}"
+                    f"  Personality: {listener_personality}"
                 )}],
             )
             result = _extract_json(response.content[0].text)
@@ -633,8 +881,8 @@ async def next_tick(
     shifts = []
 
     if pairs:
-        # Generate conversations in batches of 5 to avoid rate limits
-        BATCH_SIZE = 5
+        # Generate conversations in batches of 3 (Sonnet is heavier than Haiku)
+        BATCH_SIZE = 3
         conv_results = []
         for i in range(0, len(pairs), BATCH_SIZE):
             batch = pairs[i:i + BATCH_SIZE]
@@ -711,15 +959,22 @@ async def next_tick(
                 shifts.append({"agent_id": a_id,  "delta": round(actual_a, 4),
                                 "new_position": round(agent_a.position, 4), "source": "argument"})
 
+    # Breaking event (random, ~30% chance per tick)
+    event = await _generate_event(topic, tick)
+    if event:
+        event_shifts = _apply_event(event, agents, graph)
+        shifts.extend(event_shifts)
+
     # Global trust evolution (decay → prune → triadic closure)
     trust_changes = _evolve_trust(graph, agents)
 
     logger.info(
         f"  Tick {tick}: {len(conversations)} conversations, {len(shifts)} shifts | "
         f"edges removed={trust_changes['removed']} added={trust_changes['added']}"
+        f"{' | EVENT: ' + event['type'] if event else ''}"
     )
 
-    return {
+    result = {
         "tick":          tick,
         "agents":        [_serialize_agent(a, stances) for a in agents.values()],
         "shifts":        shifts,
@@ -732,6 +987,16 @@ async def next_tick(
             for u, v, d in graph.edges(data=True)
         ],
     }
+
+    if event:
+        result["event"] = {
+            "type":            event["type"],
+            "headline":        event["headline"],
+            "affected_agents": event["affected_agents"],
+            "tick":            tick,
+        }
+
+    return result
 
 
 # ── Probe ─────────────────────────────────────────────────────────────────────
