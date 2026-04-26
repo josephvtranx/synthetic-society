@@ -159,6 +159,7 @@ const DIFFICULTY_PRESETS: Record<Difficulty, { label: string; desc: string; soci
 export default function SetupScreen() {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
+  const [nAgents, setNAgents] = useState(25);
   const [prompt, setPrompt] = useState("");
   const [agents, setAgents] = useState<AgentData[]>([]);
   const [edges, setEdges] = useState<EdgeData[]>([]);
@@ -220,7 +221,7 @@ export default function SetupScreen() {
     setError(null);
     try {
       const preset = DIFFICULTY_PRESETS[difficulty];
-      const data = await populateSociety(preset.societyType, 25, topic, difficulty);
+      const data = await populateSociety(preset.societyType, nAgents, topic, difficulty);
       setAgents(data.agents);
       setEdges(data.edges);
       setStep(3);
@@ -249,7 +250,7 @@ export default function SetupScreen() {
       setTargetAgentIds(targetIds);
       setPromptStore(prompt);
       setDifficultyStore(difficulty);
-      const sim = await createSim(topic, preset.societyType, 25, true, difficulty);
+      const sim = await createSim(topic, preset.societyType, nAgents, true, difficulty);
       startSession(sim.sim_id, sim.topic, sim.agents, sim.edges);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start simulation");
@@ -269,7 +270,7 @@ export default function SetupScreen() {
               What debate are we running?
             </h1>
             <p style={{ fontFamily: FONT_UI, fontSize: 13, color: TEXT_SECONDARY, textAlign: "center", lineHeight: 1.6, marginBottom: 28 }}>
-              Pick a topic, and we&apos;ll generate a structured argument you can inject into a simulated society of 25 AI agents.
+              Pick a topic, and we&apos;ll generate a structured argument you can inject into a simulated society.
             </p>
 
             <label style={{ fontFamily: FONT_UI, fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase" as const, letterSpacing: "0.08em", display: "block", marginBottom: 10 }}>
@@ -331,6 +332,41 @@ export default function SetupScreen() {
                     </div>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Agent count selector */}
+            <div className="mb-6">
+              <label style={{ fontFamily: FONT_UI, fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, textTransform: "uppercase" as const, letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
+                Number of Agents
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={5}
+                  max={50}
+                  step={1}
+                  value={nAgents}
+                  onChange={(e) => setNAgents(Number(e.target.value))}
+                  className="flex-1"
+                  style={{ accentColor: ACTION }}
+                />
+                <input
+                  type="number"
+                  min={5}
+                  max={50}
+                  value={nAgents}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (Number.isNaN(next)) return;
+                    setNAgents(Math.max(5, Math.min(50, next)));
+                  }}
+                  className="w-20 focus:outline-none"
+                  style={{ background: RAISED, border: `1px solid ${BORDER_MD}`, borderRadius: 6, padding: "7px 8px", fontFamily: FONT_MONO, fontSize: 12, color: TEXT_PRIMARY }}
+                />
+              </div>
+              <div style={{ fontFamily: FONT_UI, fontSize: 10, color: TEXT_MUTED, marginTop: 6 }}>
+                Default 25. Allowed range: 5-50.
               </div>
             </div>
 
