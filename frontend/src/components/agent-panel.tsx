@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSelectedAgent, useSimStore, useCurrentSnapshot, useProbeResults, useAgentConversations, useCurrentAgents, useInfluenceRemaining } from "@/lib/store";
-import { injectArgument, introduceAgents, isolateAgent } from "@/lib/api";
+import { injectArgument, introduceAgents, isolateAgent, setAgentPosition } from "@/lib/api";
 import { SURF, RAISED, BORDER, BORDER_MD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, GENUINE, COMPLIANT, ACTION, AGAINST, FONT_UI, FONT_MONO, positionToColor } from "@/lib/colors";
-import { COST_INJECT, COST_INTRODUCE, COST_ISOLATE } from "@/lib/types";
+import { COST_INJECT, COST_INTRODUCE, COST_ISOLATE, COST_REPOSITION } from "@/lib/types";
 
 function positionLabel(p: number): string {
   if (p < -0.5) return "strongly against";
@@ -117,9 +117,11 @@ export default function AgentPanel() {
   const screen = useSimStore((s) => s.screen);
   const simId = useSimStore((s) => s.simId);
   const addInjectResult = useSimStore((s) => s.addInjectResult);
+  const addPositionUpdateResult = useSimStore((s) => s.addPositionUpdateResult);
   const spendInject = useSimStore((s) => s.spendInject);
   const spendIntroduce = useSimStore((s) => s.spendIntroduce);
   const spendIsolate = useSimStore((s) => s.spendIsolate);
+  const spendReposition = useSimStore((s) => s.spendReposition);
   const setEdges = useSimStore((s) => s.setEdges);
   const edges = useSimStore((s) => s.edges);
   const influenceRemaining = useInfluenceRemaining();
@@ -130,15 +132,24 @@ export default function AgentPanel() {
   const [tab, setTab] = useState<Tab>("profile");
   const [prompt, setPrompt] = useState("");
   const [injecting, setInjecting] = useState(false);
+  const [positionDraft, setPositionDraft] = useState(0);
+  const [settingPosition, setSettingPosition] = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
   const [introducePick, setIntroducePick] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+
+  useEffect(() => {
+    if (agent) {
+      setPositionDraft(agent.position);
+    }
+  }, [agent?.id, agent?.position]);
 
   const nameById = (id: string) => id === "player" ? "You" : allAgents.find((a) => a.id === id)?.name?.split(" ")[0] ?? id.slice(0, 6);
 
   const canAffordInject = influenceRemaining >= COST_INJECT;
   const canAffordIntroduce = influenceRemaining >= COST_INTRODUCE;
   const canAffordIsolate = influenceRemaining >= COST_ISOLATE;
+  const canAffordReposition = influenceRemaining >= COST_REPOSITION;
 
   // Check if agent has any edges
   const agentEdgeCount = agent ? edges.filter((e) => e.source === agent.id || e.target === agent.id).length : 0;
@@ -167,6 +178,22 @@ export default function AgentPanel() {
       setLastResult("inject failed");
     } finally {
       setInjecting(false);
+    }
+  }
+
+  async function handleSetPosition() {
+    if (!agent || !simId || settingPosition || !canAffordReposition || Math.abs(positionDraft - agent.position) < 0.001) return;
+    setSettingPosition(true);
+    setLastResult(null);
+    try {
+      spendReposition(agent.id);
+      const result = await setAgentPosition(simId, agent.id, positionDraft);
+      addPositionUpdateResult(result);
+      setLastResult(`${result.delta > 0 ? "+" : ""}${result.delta.toFixed(3)} shift · stance updated`);
+    } catch {
+      setLastResult("set position failed");
+    } finally {
+      setSettingPosition(false);
     }
   }
 
@@ -347,6 +374,44 @@ export default function AgentPanel() {
                 <div className="flex items-center justify-between" style={{ fontFamily: FONT_MONO, fontSize: 10, color: TEXT_MUTED }}>
                   <span>IP remaining</span>
                   <span style={{ fontWeight: 700, color: influenceRemaining < 15 ? AGAINST : TEXT_PRIMARY, fontSize: 12 }}>{influenceRemaining}</span>
+                </div>
+
+                {/* Direct opinion edit */}
+                <div className="p-3 rounded-md" style={{ background: "rgba(0,0,0,0.02)", border: `1px solid ${BORDER}` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span style={{ fontFamily: FONT_UI, fontSize: 11, fontWeight: 600, color: TEXT_PRIMARY }}>Set Position</span>
+                    <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: canAffordReposition ? positionToColor(positionDraft) : AGAINST }}>
+                      {canAffordReposition ? `${COST_REPOSITION} IP` : "Not enough IP"}
+                    </span>
+                  </div>
+                  <div className="mb-2" style={{ fontFamily: FONT_UI, fontSize: 10, color: TEXT_MUTED, lineHeight: 1.5 }}>
+                    Spend {COST_REPOSITION} IP to directly rewrite this agent&apos;s current belief and refresh their stance text.
+                  </div>
+                  <input
+                    type="range"
+                    min={-1}
+                    max={1}
+                    step={0.01}
+                    value={positionDraft}
+                    onChange={(e) => setPositionDraft(Number(e.target.value))}
+                    className="w-full"
+                    style={{ accentColor: canAffordReposition ? positionToColor(positionDraft) : TEXT_MUTED }}
+                    disabled={!canAffordReposition}
+                  />
+                  <div className="flex justify-between mt-1 mb-2" style={{ fontFamily: FONT_MONO, fontSize: 9, color: TEXT_MUTED }}>
+                    <span>-1</span><span>0</span><span>+1</span>
+                  </div>
+                  <div className="mb-2" style={{ fontFamily: FONT_MONO, fontSize: 10, color: positionToColor(positionDraft) }}>
+                    Target: {positionDraft >= 0 ? "+" : ""}{positionDraft.toFixed(2)}
+                  </div>
+                  <button
+                    onClick={handleSetPosition}
+                    disabled={settingPosition || !canAffordReposition || Math.abs(positionDraft - agent.position) < 0.001}
+                    className="w-full py-2 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    style={{ background: ACTION, border: "none", borderRadius: 5, fontFamily: FONT_UI, fontSize: 11, fontWeight: 600, color: "white" }}
+                  >
+                    {settingPosition ? "Updating..." : `Confirm position · ${COST_REPOSITION} IP`}
+                  </button>
                 </div>
 
                 {/* Inject argument */}

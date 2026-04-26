@@ -1,4 +1,4 @@
-import type { AgentData, EdgeData, TickSnapshot, InjectResult, ProbeResult, Headline, Difficulty } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, InjectResult, PositionUpdateResult, ProbeResult, Headline, Difficulty } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -97,6 +97,24 @@ export async function injectArgument(
 
   if (!res.ok) {
     throw new Error(`Inject failed: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function setAgentPosition(
+  simId: string,
+  agentId: string,
+  position: number,
+): Promise<PositionUpdateResult> {
+  const res = await fetch(`${API_URL}/sim/${simId}/set_position`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_id: agentId, position }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Set position failed: ${res.statusText}`);
   }
 
   return res.json();

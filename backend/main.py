@@ -35,6 +35,7 @@ from simulate import (
     inject_argument,
     next_tick,
     probe_agent,
+    generate_stance,
     generate_all_stances,
     _serialize_agent,
 )
@@ -232,6 +233,11 @@ class InjectRequest(BaseModel):
     prompt: str
 
 
+class SetPositionRequest(BaseModel):
+    agent_id: str
+    position: float
+
+
 @app.post("/sim/{sim_id}/inject")
 async def inject(sim_id: str, req: InjectRequest):
     """
@@ -260,6 +266,57 @@ async def inject(sim_id: str, req: InjectRequest):
         f"delta={result.get('actual_delta', 0):+.4f}"
     )
     return result
+
+
+# ── /sim/{id}/set_position ───────────────────────────────────────────────────
+@app.post("/sim/{sim_id}/set_position")
+async def set_position(sim_id: str, req: SetPositionRequest):
+    """
+    Directly set an agent's current opinion position and refresh their stance.
+    This does not advance the tick counter.
+    """
+    session = _sessions.get(sim_id)
+    if not session:
+        raise HTTPException(404, f"Session '{sim_id}' not found")
+
+    if req.agent_id not in session.agents:
+        raise HTTPException(400, f"Agent {req.agent_id} not found")
+
+    agent = session.agents[req.agent_id]
+    old_position = agent.position
+    new_position = max(-1.0, min(1.0, float(req.position)))
+    agent.position = new_position
+
+    if abs(new_position - old_position) > 0.001:
+        session.stances[agent.id] = await generate_stance(agent, session.topic, changed=True)
+
+    shift = round(new_position - old_position, 4)
+    if 0 <= session.tick < len(session.history):
+        snapshot = session.history[session.tick]
+        snapshot["agents"] = [_serialize_agent(a, session.stances) for a in session.agents.values()]
+        if abs(shift) > 0.001:
+            snapshot["shifts"] = [
+                *snapshot.get("shifts", []),
+                {
+                    "agent_id": agent.id,
+                    "delta": shift,
+                    "new_position": round(agent.position, 4),
+                    "source": "direct",
+                },
+            ]
+
+    logger.info(
+        f"POST /sim/{sim_id}/set_position: {agent.name} {old_position:.3f}→{agent.position:.3f}"
+    )
+
+    return {
+        "agent_id": agent.id,
+        "old_position": round(old_position, 4),
+        "new_position": round(agent.position, 4),
+        "delta": shift,
+        "stance": session.stances.get(agent.id, ""),
+        "agent": _serialize_agent(agent, session.stances),
+    }
 
 
 # ── /sim/{id}/next_tick ───────────────────────────────────────────────────────

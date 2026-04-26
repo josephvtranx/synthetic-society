@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, InfluenceAction, OvertonWindow, Headline, Difficulty } from "./types";
-import { INFLUENCE_BUDGET, COST_SCOUT, COST_INJECT, COST_INTRODUCE, COST_ISOLATE, OVERTON_PERCENTILE } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, PositionUpdateResult, InfluenceAction, OvertonWindow, Headline, Difficulty } from "./types";
+import { INFLUENCE_BUDGET, COST_SCOUT, COST_INJECT, COST_INTRODUCE, COST_ISOLATE, COST_REPOSITION, OVERTON_PERCENTILE } from "./types";
 
 type Screen = "setup" | "playback" | "debrief";
 
@@ -44,6 +44,7 @@ type SimStore = {
   setLoading: (loading: boolean) => void;
   startSession: (simId: string, topic: string, agents: AgentData[], edges: EdgeData[]) => void;
   addInjectResult: (result: InjectResult, targetId: string) => void;
+  addPositionUpdateResult: (result: PositionUpdateResult) => void;
   addTick: (snapshot: TickSnapshot) => void;
   setProbeResults: (results: ProbeResult[], summary: { total_shifted: number; genuine: number; surface: number }) => void;
   setHeadline: (headline: Headline) => void;
@@ -57,6 +58,7 @@ type SimStore = {
   spendInject: (targetIds: string[]) => void;
   spendIntroduce: (agentAId: string, agentBId: string) => void;
   spendIsolate: (agentId: string) => void;
+  spendReposition: (agentId: string) => void;
   setDifficulty: (difficulty: Difficulty) => void;
   setEdges: (edges: EdgeData[]) => void;
   reset: () => void;
@@ -150,6 +152,30 @@ export const useSimStore = create<SimStore>((set) => ({
       };
     }),
 
+  addPositionUpdateResult: (result) =>
+    set((state) => {
+      const updatedTicks = [...state.ticks];
+      const tickIdx = state.currentTick;
+      if (tickIdx < updatedTicks.length) {
+        const tick = { ...updatedTicks[tickIdx] };
+        tick.agents = tick.agents.map((a) =>
+          a.id === result.agent.id ? result.agent : a,
+        );
+        tick.shifts = [
+          ...tick.shifts,
+          {
+            agent_id: result.agent.id,
+            delta: result.delta,
+            new_position: result.new_position,
+            source: "direct",
+          },
+        ];
+        updatedTicks[tickIdx] = tick;
+      }
+
+      return { ticks: updatedTicks };
+    }),
+
   addTick: (snapshot) =>
     set((state) => {
       const newTicks = [...state.ticks, snapshot];
@@ -209,6 +235,17 @@ export const useSimStore = create<SimStore>((set) => ({
         influenceActions: [
           ...state.influenceActions,
           { type: "isolate" as const, agentId, cost: COST_ISOLATE },
+        ],
+      };
+    }),
+  spendReposition: (agentId) =>
+    set((state) => {
+      if (state.influenceSpent + COST_REPOSITION > INFLUENCE_BUDGET) return state;
+      return {
+        influenceSpent: state.influenceSpent + COST_REPOSITION,
+        influenceActions: [
+          ...state.influenceActions,
+          { type: "reposition" as const, agentId, cost: COST_REPOSITION },
         ],
       };
     }),

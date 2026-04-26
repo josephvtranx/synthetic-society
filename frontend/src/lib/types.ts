@@ -95,6 +95,15 @@ export type InjectResult = {
   agent: AgentData;
 };
 
+export type PositionUpdateResult = {
+  agent_id: string;
+  old_position: number;
+  new_position: number;
+  delta: number;
+  stance: string;
+  agent: AgentData;
+};
+
 // What the player submits
 export type PlayerInjection = {
   prompt: string;
@@ -108,7 +117,8 @@ export type InfluenceAction =
   | { type: "scout"; agentId: string; cost: number }
   | { type: "inject"; agentId: string; cost: number }
   | { type: "introduce"; agentId: string; cost: number }
-  | { type: "isolate"; agentId: string; cost: number };
+  | { type: "isolate"; agentId: string; cost: number }
+  | { type: "reposition"; agentId: string; cost: number };
 
 export type OvertonWindow = {
   low: number;
@@ -124,4 +134,5 @@ export const COST_SCOUT = 5;
 export const COST_INJECT = 30;
 export const COST_INTRODUCE = 15;
 export const COST_ISOLATE = 20;
+export const COST_REPOSITION = 20;
 export const OVERTON_PERCENTILE = 0.15;

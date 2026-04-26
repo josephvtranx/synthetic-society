@@ -343,12 +343,17 @@ def _describe_personality(agent: Agent) -> str:
 
 
 # ── Stance generation ─────────────────────────────────────────────────────────
-async def generate_stance(agent: Agent, topic: str) -> str:
+async def generate_stance(agent: Agent, topic: str, changed: bool = False) -> str:
     """Generate a rich internal belief grounded in the agent's life experience."""
     client = _get_client()
     personality = _describe_personality(agent)
     if client:
         try:
+            edit_note = (
+                "This belief has just been updated, so phrase it like their current view now: "
+                "they may mention coming around, sharpening their opinion, or feeling more certain. "
+                if changed else ""
+            )
             response = await client.messages.create(
                 model=FAST_MODEL,
                 max_tokens=150,
@@ -358,6 +363,7 @@ async def generate_stance(agent: Agent, topic: str) -> str:
                     "that explains WHY they hold this view — not just what they believe. "
                     "Match their position: negative=against, positive=for, near zero=conflicted. "
                     "Write in their natural voice (casual, not academic). "
+                    f"{edit_note}"
                     "Return ONLY the text, no quotes, no JSON."
                 ),
                 messages=[{"role": "user", "content": (
@@ -373,9 +379,11 @@ async def generate_stance(agent: Agent, topic: str) -> str:
             logger.error(f"Stance error for {agent.name}: {e}")
 
     if agent.position > 0.3:
-        return "I think this makes sense, we should support it."
+        return "I think this makes sense, and this is where I stand now."
     elif agent.position < -0.3:
-        return "I don't buy it. This isn't going to work."
+        return "I don't buy it, and I now feel pretty firmly against it."
+    if changed:
+        return "My view has shifted, but I'm still working through the details."
     return "I'm not sure yet. I'd need to hear more."
 
 
