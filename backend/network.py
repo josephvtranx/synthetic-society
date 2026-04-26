@@ -82,14 +82,15 @@ def _create_standard_graph(agents: dict[str, Agent]) -> nx.Graph:
 
 def _create_cult_graph(agents: dict[str, Agent]) -> nx.Graph:
     """
-    Hub-and-spoke: leader connected to every follower with high trust.
-    Sparse follower-follower edges so the leader's position dominates peer pressure.
+    Dense cult graph: one leader at very high trust to all followers,
+    plus strong follower-follower ties so contagion spreads rapidly.
     """
     graph = nx.Graph()
     graph.add_nodes_from(agents.keys())
 
     leader_id = next(
-        a_id for a_id, a in agents.items() if "cult_leader" in a.group_ids
+        (a_id for a_id, a in agents.items() if "cult_leader" in a.group_ids),
+        next(iter(agents.keys()))
     )
     follower_ids = [a_id for a_id in agents if a_id != leader_id]
 
@@ -97,16 +98,16 @@ def _create_cult_graph(agents: dict[str, Agent]) -> nx.Graph:
     for f_id in follower_ids:
         graph.nodes[f_id]["cluster"] = 1
 
-    # Leader → all followers: high trust
+    # Leader → all followers: near-max trust.
     for f_id in follower_ids:
-        trust = round(random.uniform(0.75, 0.92), 3)
+        trust = round(random.uniform(0.95, 0.99), 3)
         graph.add_edge(leader_id, f_id, weight=trust)
 
-    # Sparse follower-follower connections
+    # Followers are also tightly connected with high trust so shifts cascade quickly.
     for i, f1 in enumerate(follower_ids):
         for f2 in follower_ids[i + 1:]:
-            if random.random() < 0.10:
-                trust = round(random.uniform(0.20, 0.45), 3)
+            if random.random() < 0.92:
+                trust = round(random.uniform(0.88, 0.97), 3)
                 graph.add_edge(f1, f2, weight=trust)
 
     _ensure_connected(graph)
@@ -124,6 +125,13 @@ def _create_echo_chamber_graph(agents: dict[str, Agent]) -> nx.Graph:
 
     left_ids = [a_id for a_id, a in agents.items() if "left_chamber" in a.group_ids]
     right_ids = [a_id for a_id, a in agents.items() if "right_chamber" in a.group_ids]
+
+    # Fallback if labels are missing: split by sorted position.
+    if not left_ids or not right_ids:
+        ordered = sorted(agents.values(), key=lambda a: a.position)
+        split = max(1, len(ordered) // 2)
+        left_ids = [a.id for a in ordered[:split]]
+        right_ids = [a.id for a in ordered[split:]]
 
     for a_id in left_ids:
         graph.nodes[a_id]["cluster"] = 0
@@ -157,9 +165,6 @@ def _create_random_spread_graph(agents: dict[str, Agent]) -> nx.Graph:
     """Erdős–Rényi graph with uniformly random trust values."""
     agent_ids = list(agents.keys())
     n = len(agent_ids)
-
-    for a_id in agent_ids:
-        agents[a_id]._cluster_id = 0
 
     base = nx.erdos_renyi_graph(n, 0.13)
     mapping = {i: agent_ids[i] for i in range(n)}

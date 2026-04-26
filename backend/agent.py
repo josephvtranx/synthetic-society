@@ -158,7 +158,14 @@ def generate_population(
     Cluster assignment happens later in create_society_graph, but we
     pre-assign clusters here based on CLUSTER_SIZES so agents get the
     right traits. Graph creation will overwrite group_ids with cluster names.
-    Returns: dict mapping agent_id -> Agent
+        Returns: dict mapping agent_id -> Agent
+
+        Society presets:
+            polarized      - original clustered distribution
+            consensus      - mild, near-center opinions
+            cult           - one central leader + highly suggestible followers
+            echo_chambers  - two opposed chambers with strong initial separation
+            random_spread  - broad random initial opinions
     """
     from network import CLUSTER_SIZES
 
@@ -204,13 +211,63 @@ def generate_population(
             confidence = float(np.clip(confidence + 0.10, 0.05, 0.95))
             conformity = float(np.clip(conformity - 0.10, 0.05, 0.95))
 
+        group_ids: list[str] = []
+        x, y = 0.50, 0.50
+
         # Position: cluster lean + noise, overridden by society_type if needed
-        if society_type == "polarized":
+        if society_type == "cult":
+            is_leader = i == 0
+            if is_leader:
+                group_ids = ["cult_leader"]
+                # Central influencer: high confidence/identity, less conformist.
+                openness = 0.0
+                analytical = 1.0
+                conformity = 0.0
+                identity_attachment = 1.0
+                confidence = 1.0
+                position = 0.0
+                x = 0.50
+                y = 0.50
+            else:
+                group_ids = ["cult_follower"]
+                # Followers are intentionally easy to move.
+                openness = 1.0
+                analytical = 0.0
+                conformity = 1.0
+                identity_attachment = 0.0
+                confidence = 0.0
+                position = max(-0.12, min(0.12, random.gauss(0.0, 0.06)))
+
+                # Ring around leader with jitter so the center reads clearly.
+                theta = (2.0 * np.pi * (i - 1)) / max(1, n - 1)
+                radius = 0.28 + random.gauss(0, 0.02)
+                x = max(0.05, min(0.95, 0.50 + radius * np.cos(theta)))
+                y = max(0.05, min(0.95, 0.50 + radius * np.sin(theta)))
+        elif society_type == "echo_chambers":
+            in_left = i < (n // 2)
+            group_ids = ["left_chamber" if in_left else "right_chamber"]
+
+            # Two opposed priors with small variance.
+            base = -0.70 if in_left else 0.70
+            position = max(-1.0, min(1.0, base + random.gauss(0, 0.12)))
+
+            # Slightly resistant baseline; hard difficulty pushes this further below.
+            openness = float(np.clip(openness - 0.05, 0.05, 0.95))
+            identity_attachment = float(np.clip(identity_attachment + 0.08, 0.05, 0.95))
+            confidence = float(np.clip(confidence + 0.06, 0.05, 0.95))
+
+            # Two clear spatial blocs for visual readability.
+            cx, cy = ((0.28, 0.5) if in_left else (0.72, 0.5))
+            x = max(0.05, min(0.95, cx + random.gauss(0, 0.07)))
+            y = max(0.05, min(0.95, cy + random.gauss(0, 0.16)))
+        elif society_type == "polarized":
             lean = traits["position_lean"]
             spread = traits["position_spread"]
             position = lean + random.gauss(0, spread)
         elif society_type == "consensus":
             position = float(np.random.beta(5, 5)) * 0.6 - 0.3
+        elif society_type == "random_spread":
+            position = random.uniform(-1.0, 1.0)
         else:  # random
             position = random.uniform(-1.0, 1.0)
         position = max(-1.0, min(1.0, position))
@@ -220,11 +277,13 @@ def generate_population(
         age = random.randint(age_lo, age_hi)
 
         # Spatial position: clustered around cluster center with jitter
-        cx, cy = CLUSTER_CENTERS[cluster_id]
-        x = max(0.05, min(0.95, cx + random.gauss(0, 0.08)))
-        y = max(0.05, min(0.95, cy + random.gauss(0, 0.08)))
+        # for baseline modes. Preset modes may have already assigned x/y above.
+        if society_type not in {"cult", "echo_chambers"}:
+            cx, cy = CLUSTER_CENTERS[cluster_id]
+            x = max(0.05, min(0.95, cx + random.gauss(0, 0.08)))
+            y = max(0.05, min(0.95, cy + random.gauss(0, 0.08)))
 
-        # group_ids will be overwritten by create_society_graph with cluster name
+        # group_ids for special modes are already set above.
         agent = Agent(
             id=agent_id,
             name=names[i],
@@ -232,7 +291,7 @@ def generate_population(
             openness=openness,
             analytical=analytical,
             conformity=conformity,
-            group_ids=[],
+            group_ids=group_ids,
             position=position,
             confidence=confidence,
             identity_attachment=identity_attachment,

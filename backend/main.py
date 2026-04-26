@@ -152,7 +152,7 @@ async def populate(body: dict):
     logger.info(f"POST /populate: type={society_type} n={n_agents} difficulty={difficulty} topic='{topic[:60]}'")
 
     agents = generate_population(n_agents, topic or "preview", society_type, difficulty)
-    graph = create_society_graph(agents)
+    graph = create_society_graph(agents, society_type)
     stances = await generate_all_stances(agents, topic) if topic else {}
 
     _cached_agents = agents
@@ -190,7 +190,7 @@ async def create_sim(req: CreateSimRequest):
         logger.info(f"POST /sim/create: reusing cached population ({len(agents)} agents)")
     else:
         agents = generate_population(n, req.topic, req.society_type, req.difficulty)
-        graph = create_society_graph(agents)
+        graph = create_society_graph(agents, req.society_type)
         stances = await generate_all_stances(agents, req.topic)
         logger.info(f"POST /sim/create: fresh population ({len(agents)} agents) difficulty={req.difficulty}")
 

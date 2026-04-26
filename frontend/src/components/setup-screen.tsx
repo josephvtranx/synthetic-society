@@ -138,6 +138,24 @@ function LockedTraitRow({ label }: { label: string }) {
 
 const QUICK_TOPICS = ["Minimum wage", "Gun control", "Remote work", "AI regulation", "Universal healthcare"];
 
+const DIFFICULTY_PRESETS: Record<Difficulty, { label: string; desc: string; societyType: string }> = {
+  easy: {
+    label: "Easy",
+    desc: "Cult network: one leader, ultra-connected followers",
+    societyType: "cult",
+  },
+  medium: {
+    label: "Medium",
+    desc: "Polarized baseline: clustered but bridgeable",
+    societyType: "polarized",
+  },
+  hard: {
+    label: "Hard",
+    desc: "Echo chambers: two blocs with weak bridges",
+    societyType: "echo_chambers",
+  },
+};
+
 export default function SetupScreen() {
   const [step, setStep] = useState(1);
   const [topic, setTopic] = useState("");
@@ -201,7 +219,8 @@ export default function SetupScreen() {
     setGenerating(true);
     setError(null);
     try {
-      const data = await populateSociety("polarized", 25, topic, difficulty);
+      const preset = DIFFICULTY_PRESETS[difficulty];
+      const data = await populateSociety(preset.societyType, 25, topic, difficulty);
       setAgents(data.agents);
       setEdges(data.edges);
       setStep(3);
@@ -224,12 +243,13 @@ export default function SetupScreen() {
     setStarting(true);
     setError(null);
     try {
+      const preset = DIFFICULTY_PRESETS[difficulty];
       // Deduct inject cost
       spendInject(targetIds);
       setTargetAgentIds(targetIds);
       setPromptStore(prompt);
       setDifficultyStore(difficulty);
-      const sim = await createSim(topic, "polarized", 25, true, difficulty);
+      const sim = await createSim(topic, preset.societyType, 25, true, difficulty);
       startSession(sim.sim_id, sim.topic, sim.agents, sim.edges);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start simulation");
@@ -290,23 +310,20 @@ export default function SetupScreen() {
                 Difficulty
               </label>
               <div className="flex gap-2">
-                {([
-                  { value: "easy" as Difficulty, label: "Easy", desc: "Open-minded society" },
-                  { value: "medium" as Difficulty, label: "Medium", desc: "Balanced traits" },
-                  { value: "hard" as Difficulty, label: "Hard", desc: "Resistant & entrenched" },
-                ]).map((d) => (
+                {(Object.entries(DIFFICULTY_PRESETS) as Array<[Difficulty, { label: string; desc: string }]>)
+                  .map(([value, d]) => (
                   <button
-                    key={d.value}
-                    onClick={() => setDifficulty(d.value)}
+                    key={value}
+                    onClick={() => setDifficulty(value)}
                     className="flex-1 py-2.5 transition-all"
                     style={{
-                      border: difficulty === d.value ? `2px solid ${ACTION}` : `1px solid ${BORDER}`,
+                      border: difficulty === value ? `2px solid ${ACTION}` : `1px solid ${BORDER}`,
                       borderRadius: 8,
-                      background: difficulty === d.value ? "rgba(0,0,0,0.03)" : "transparent",
+                      background: difficulty === value ? "rgba(0,0,0,0.03)" : "transparent",
                       fontFamily: FONT_UI, fontSize: 12,
                     }}
                   >
-                    <div style={{ fontWeight: 600, color: difficulty === d.value ? TEXT_PRIMARY : TEXT_SECONDARY }}>
+                    <div style={{ fontWeight: 600, color: difficulty === value ? TEXT_PRIMARY : TEXT_SECONDARY }}>
                       {d.label}
                     </div>
                     <div style={{ fontSize: 10, color: TEXT_MUTED, marginTop: 2 }}>
