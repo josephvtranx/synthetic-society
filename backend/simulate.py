@@ -484,7 +484,7 @@ def _compute_asch_delta(agent: Agent, graph, agents: dict) -> float:
     # Unanimity multiplier — Allen & Levine (1968): 37% → 5.5% with ally
     # ratio = 37/5.5 ≈ 6.7×
     has_ally = any(_sign(agents[n].position) == agent_sign for n, _ in neighbors)
-    u_mult = 6.7 if not has_ally else 1.0
+    u_mult = 1 if not has_ally else 0.16
 
     # Susceptibility (map: agreeableness→conformity, neuroticism default 0.5)
     suscept = (
