@@ -1,11 +1,23 @@
 """
 CMV-trained argument quality classifier.
 
-Trained on 4,263 paired success/failure arguments from r/ChangeMyView
-(Cornell ConvoKit winning-args-corpus). Uses sentence-transformer embeddings
-(all-MiniLM-L6-v2) + handcrafted linguistic features.
+Trained on 4,263 paired success/failure arguments from r/ChangeMyView.
+Uses sentence-transformer embeddings (all-MiniLM-L6-v2) + 19 handcrafted
+linguistic features → LogisticRegression.
 
-Test accuracy: 86.2%, ROC AUC: 0.93
+Data source: Cornell ConvoKit "winning-args-corpus"
+  Paper: Tan et al. "Winning Arguments" (ACL 2016)
+  URL:   https://convokit.cornell.edu/documentation/winning.html
+  Full corpus: 3,051 conversations, 293k utterances. We use all 4,263
+  success/failure pairs (>1 pair per OP post possible). 8,526 labeled examples.
+  Each pair: one argument that earned a ∆ (changed OP's view), one that did not.
+
+Metrics (20% held-out test set, n=1706, stratified):
+  Accuracy:  84.5%
+  ROC AUC:   0.917
+  Precision: 0.846 (failure) / 0.844 (success)
+  Recall:    0.844 (failure) / 0.846 (success)
+  F1:        0.845 (failure) / 0.845 (success)
 
 Returns argument_quality as a percentile (0-1) calibrated against the full
 CMV dataset: "how good is this argument compared to real persuasion attempts?"
@@ -48,9 +60,20 @@ def _load_model():
 
 
 def _extract_features(argument: str) -> dict:
-    """Extract handcrafted linguistic features matching training pipeline."""
+    """Extract handcrafted linguistic features matching training pipeline.
+
+    Length features (arg_words, log_arg_len, n_sentences) are capped at the
+    90th percentile of the CMV training data.  The model learned 'long = losing'
+    from CMV (winning mean 87 words, losing mean 145 words), which unfairly
+    punishes thoughtful player arguments that exceed CMV norms.
+    """
+    # 90th-percentile caps from the combined CMV training data (8,526 examples)
+    MAX_WORDS     = 250   # p90 ≈ 250 words across both classes
+    MAX_CHARS     = 1500  # p90 ≈ 1,500 chars
+    MAX_SENTENCES = 15    # p90 ≈ 15 sentences
+
     arg = str(argument) if argument else ""
-    arg_words = len(arg.split())
+    arg_words = min(len(arg.split()), MAX_WORDS)
 
     hedge_words = [
         "perhaps", "maybe", "might", "could", "possibly", "arguably",
@@ -74,11 +97,11 @@ def _extract_features(argument: str) -> dict:
     n_sentences = len(re.split(r"[.!?]+", arg)) - 1
 
     return {
-        "log_arg_len": np.log1p(len(arg)),
+        "log_arg_len": np.log1p(min(len(arg), MAX_CHARS)),
         "arg_words": arg_words,
         "avg_word_len": np.mean([len(w) for w in arg.split()]) if arg.split() else 0,
         "arg_paragraphs": max(1, len([p for p in arg.split("\n\n") if p.strip()])),
-        "n_sentences": max(1, n_sentences),
+        "n_sentences": min(max(1, n_sentences), MAX_SENTENCES),
         "n_links": len(re.findall(r"https?://|www\.", arg)),
         "n_numbers": len(re.findall(r"\b\d+(?:\.\d+)?%?\b", arg)),
         "n_numbers_rate": len(re.findall(r"\b\d+(?:\.\d+)?%?\b", arg)) / (arg_words + 1),
