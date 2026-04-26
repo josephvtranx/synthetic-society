@@ -796,6 +796,21 @@ async def classify_user_argument(prompt: str, topic: str, target: Agent) -> dict
         "agent_response": "That's an interesting perspective. I'm not sure I fully agree.",
     }
 
+# ── Reinforcement helper ──────────────────────────────────────────────────────
+def _effective_arg_position(speaker_pos: float, listener_pos: float) -> float:
+    """
+    When speaker and listener are on the same side, a conversation reinforces
+    toward the shared extreme rather than stalling at zero distance.
+    Extrapolate 0.15 units beyond the speaker in their shared direction so the
+    ELM distance term stays non-zero.
+    """
+    if speaker_pos == 0 or listener_pos == 0:
+        return speaker_pos
+    if (speaker_pos > 0) == (listener_pos > 0):
+        direction = 1.0 if speaker_pos > 0 else -1.0
+        return min(1.0, max(-1.0, speaker_pos + direction * 0.60))
+    return speaker_pos
+
 
 # ── Pairing logic ─────────────────────────────────────────────────────────────
 def _pair_agents_for_tick(agents: dict, graph) -> list[tuple[str, str]]:
@@ -939,7 +954,7 @@ async def next_tick(
                 agent_b,
                 conv["speaker_arg_type"],
                 conv["speaker_arg_quality"],
-                agent_a.position,
+                _effective_arg_position(agent_a.position, agent_b.position),
                 trust=edge_trust,
             )
             delta_peer_b = _compute_asch_delta(agent_b, graph, agents)
@@ -952,7 +967,7 @@ async def next_tick(
                 agent_a,
                 conv["listener_arg_type"],
                 conv["listener_arg_quality"],
-                agent_b.position,
+                _effective_arg_position(agent_b.position, agent_a.position),
                 trust=edge_trust,
             )
             delta_peer_a = _compute_asch_delta(agent_a, graph, agents)
