@@ -83,13 +83,15 @@ A's delta = ELM(A, B's response) + Asch(A's neighborhood) → apply identity res
 ```python
 elab = analytical × 0.4 + salience × 0.3 + openness × 0.3
 
-d_central = arg_quality × 0.18 × (arg_position − position)
-d_periph  = 0.75       × 0.12 × (arg_position − position)  # source_cred = 0.75 (trust=1)
+d_central = arg_quality × 0.12 × (arg_position − position)
+       # Petty & Cacioppo (1986) Fig 3: ~0.8/7 ≈ 0.114 per unit distance
+d_periph  = source_cred × 0.09 × (arg_position − position)
+       # Chaiken (1980): heuristic ~75% of systematic → 0.12 × 0.75 ≈ 0.09
 
 type_mult = {evidence: 0.5+analytical×0.5, social: 0.3+conformity×0.7,
              emotional: 0.65, repetition: 1.0−analytical×0.5}[arg_type]
 
-cb_damp   = 1 − (1−openness) × alignment × 0.6  # confirmation bias
+cb_damp   = 1 − (1−openness) × alignment × 0.6
 delta_arg = (elab×d_central + (1−elab)×d_periph) × type_mult × cb_damp
 ```
 
@@ -97,15 +99,17 @@ delta_arg = (elab×d_central + (1−elab)×d_periph) × type_mult × cb_damp
 ```python
 opp_ratio = fraction of neighbors with opposing sign position
 has_ally  = any neighbor agrees with agent's sign
-u_mult    = 6.4 if not has_ally else 1.0   # single ally cuts pressure ~6×
+u_mult    = 6.7 if not has_ally else 1.0   # Allen & Levine (1968): 37%/5.5% ≈ 6.7×
 suscept   = 0.40×(1−openness) + 0.25×conformity + 0.10 + 0.15×(1−analytical)
-p_update  = min(0.32 × opp_ratio × u_mult × suscept, 0.80)
+p_update  = min(0.368 × opp_ratio × u_mult × suscept, 0.80)
+       # Asch (1956): 36.8% mean conformity across 12 critical trials
 delta_peer = (neighbor_mean − position) × 0.08  if rand < p_update else 0
+       # Gerard, Wilhelmy & Conolley (1968): 6-10% shift per exposure
 ```
 
 **Key dynamics:**
 - No ally + full opposition: up to 80% chance of peer pressure update per conversation
-- Single ally present: pressure drops ~6× (Allen & Levine 1968)
+- Single ally present: pressure drops ~6.7× (Allen & Levine 1968)
 - High-conformity, low-openness agents are the primary source of surface compliance
 
 ### End — The Probe

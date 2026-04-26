@@ -676,23 +676,20 @@ async def generate_agent_conversation(
             t0 = time.time()
             response = await client.messages.create(
                 model=FAST_MODEL,
-                max_tokens=500,
+                max_tokens=250,
                 system=(
                     f"Simulate a realistic conversation between two people about: {topic}\n\n"
                     "RULES:\n"
-                    "- Each person speaks 3-5 sentences in their natural voice\n"
-                    "- They should reference specific personal experiences, anecdotes, or concrete examples\n"
-                    "- They should ACTUALLY ENGAGE with each other — push back, ask pointed questions, "
-                    "concede specific points, or double down with real reasons\n"
-                    "- Avoid generic platitudes like 'that's interesting' or 'I see your point' — "
-                    "make them argue like real people who care about this topic\n"
-                    "- If they disagree, show the tension. If they agree, show them building on each other's ideas\n"
-                    "- Their personality traits should shape HOW they argue, not just WHAT they say\n\n"
+                    "- Each person speaks 1-2 sentences MAX — short, punchy, natural\n"
+                    "- They should reference specific experiences or concrete examples\n"
+                    "- They should ACTUALLY ENGAGE — push back, concede, or double down\n"
+                    "- Avoid platitudes like 'that's interesting' — argue like real people\n"
+                    "- Personality traits shape HOW they argue\n\n"
                     "Classify each person's PRIMARY argument strategy:\n"
-                    "  evidence = cites facts, data, studies, specific outcomes\n"
-                    "  social = appeals to norms, what others think, community standards\n"
-                    "  emotional = appeals to values, fairness, personal impact, moral weight\n"
-                    "  repetition = restates existing position without new substance\n\n"
+                    "  evidence = cites facts, data, specific outcomes\n"
+                    "  social = appeals to norms, what others think\n"
+                    "  emotional = appeals to values, fairness, moral weight\n"
+                    "  repetition = restates position without new substance\n\n"
                     "Return ONLY valid JSON:\n"
                     '{"speaker_message": "...", '
                     '"speaker_arg_type": "evidence|social|emotional|repetition", '
