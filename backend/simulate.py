@@ -797,19 +797,37 @@ async def classify_user_argument(prompt: str, topic: str, target: Agent) -> dict
     }
 
 # ── Reinforcement helper ──────────────────────────────────────────────────────
-def _effective_arg_position(speaker_pos: float, listener_pos: float) -> float:
+def _compute_conviction_delta(
+    listener: Agent,
+    speaker_pos: float,
+    arg_quality: float,
+    trust: float = 1.0,
+) -> float:
     """
-    When speaker and listener are on the same side, a conversation reinforces
-    toward the shared extreme rather than stalling at zero distance.
-    Extrapolate 0.15 units beyond the speaker in their shared direction so the
-    ELM distance term stays non-zero.
+    Conviction-based delta for agent-to-agent conversations.
+    The speaker's position magnitude is the force; effectiveness scales it.
+
+    Same side   → full effectiveness (echo chamber reinforcement)
+    Opposite    → reduced effectiveness (resistance to counter-attitudinal push)
+
+    Listener susceptibility factors in openness (receptivity), low identity
+    attachment (belief not load-bearing to self-concept), and low confidence
+    (still working things out).
     """
-    if speaker_pos == 0 or listener_pos == 0:
-        return speaker_pos
-    if (speaker_pos > 0) == (listener_pos > 0):
-        direction = 1.0 if speaker_pos > 0 else -1.0
-        return min(1.0, max(-1.0, speaker_pos + direction * 0.60))
-    return speaker_pos
+    if speaker_pos == 0:
+        return 0.0
+
+    same_side = listener.position == 0 or (speaker_pos > 0) == (listener.position > 0)
+    alignment_factor = 1.0 if same_side else 0.35
+
+    susceptibility = (
+        0.4 * listener.openness
+        + 0.3 * (1.0 - listener.identity_attachment)
+        + 0.3 * (1.0 - listener.confidence)
+    )
+
+    effectiveness = arg_quality * alignment_factor * susceptibility * trust
+    return effectiveness * speaker_pos * MULTIPLIER
 
 
 # ── Pairing logic ─────────────────────────────────────────────────────────────
@@ -950,11 +968,10 @@ async def next_tick(
             edge_trust = graph[a_id][b_id].get("weight", 1.0) if graph.has_edge(a_id, b_id) else 1.0
 
             # Listener B hears speaker A's argument (scaled by edge trust)
-            delta_arg_b = _compute_elm_delta(
+            delta_arg_b = _compute_conviction_delta(
                 agent_b,
-                conv["speaker_arg_type"],
+                agent_a.position,
                 conv["speaker_arg_quality"],
-                _effective_arg_position(agent_a.position, agent_b.position),
                 trust=edge_trust,
             )
             delta_peer_b = _compute_asch_delta(agent_b, graph, agents)
@@ -963,11 +980,10 @@ async def next_tick(
             actual_b = agent_b.position - old_b
 
             # Listener A hears speaker B's response (scaled by same edge trust)
-            delta_arg_a = _compute_elm_delta(
+            delta_arg_a = _compute_conviction_delta(
                 agent_a,
-                conv["listener_arg_type"],
+                agent_b.position,
                 conv["listener_arg_quality"],
-                _effective_arg_position(agent_b.position, agent_a.position),
                 trust=edge_trust,
             )
             delta_peer_a = _compute_asch_delta(agent_a, graph, agents)
