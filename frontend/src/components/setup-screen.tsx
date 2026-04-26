@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSimStore } from "@/lib/store";
-import { populateSociety, runSimulation } from "@/lib/api";
+import { populateSociety, createSim } from "@/lib/api";
 import { positionToColor, BG_CANVAS, BG, TEXT_PRIMARY, TEXT_MUTED, CARD } from "@/lib/colors";
 import { drawTownBackground } from "@/lib/draw-houses";
 import type { AgentData, EdgeData } from "@/lib/types";
@@ -20,7 +20,6 @@ function drawPreviewFigure(
   fill: string,
   blinking: boolean,
   walkPhase: number,
-  isSelected: boolean,
   name: string,
 ) {
   const neckY = y + HEAD_R;
@@ -28,17 +27,6 @@ function drawPreviewFigure(
   const footY = hipY + LEG_LEN;
   const legSwing = Math.sin(walkPhase) * 2;
   const armSwing = Math.sin(walkPhase + Math.PI) * 3;
-
-  // Selection
-  if (isSelected) {
-    ctx.beginPath();
-    ctx.arc(x, y, HEAD_R + 5, 0, Math.PI * 2);
-    ctx.strokeStyle = "#1a1a1a";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
 
   ctx.strokeStyle = "#1a1a1a";
   ctx.lineWidth = OUTLINE;
@@ -113,13 +101,9 @@ function drawPreviewFigure(
 function PreviewCanvas({
   agents,
   edges,
-  selectedIds,
-  onSelect,
 }: {
   agents: AgentData[];
   edges: EdgeData[];
-  selectedIds: string[];
-  onSelect: (id: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -172,7 +156,6 @@ function PreviewCanvas({
       for (const agent of agents) {
         const x = pad + agent.x * gw;
         const y = pad + agent.y * gh;
-        const isSelected = selectedIds.includes(agent.id);
 
         if (!blinkTimers.current.has(agent.id)) {
           blinkTimers.current.set(agent.id, { timer: 2 + Math.random() * 4, blinking: false });
@@ -189,14 +172,13 @@ function PreviewCanvas({
           positionToColor(agent.position),
           bt.blinking,
           phaseRef.current * 1.2 + agent.x * 10,
-          isSelected,
           agent.name,
         );
       }
 
       animRef.current = requestAnimationFrame(draw);
     },
-    [agents, selectedIds, edges],
+    [agents, edges],
   );
 
   useEffect(() => {
@@ -204,64 +186,27 @@ function PreviewCanvas({
     return () => cancelAnimationFrame(animRef.current);
   }, [draw]);
 
-  function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const pad = 60;
-    const gw = container.clientWidth - pad * 2;
-    const gh = container.clientHeight - pad * 2;
-
-    for (const agent of agents) {
-      const ax = pad + agent.x * gw;
-      const ay = pad + agent.y * gh;
-      if (Math.sqrt((mx - ax) ** 2 + (my - ay) ** 2) < 25) {
-        onSelect(agent.id);
-        return;
-      }
-    }
-  }
-
   return (
     <div ref={containerRef} className="w-full h-full">
-      <canvas ref={canvasRef} onClick={handleClick} className="w-full h-full cursor-pointer" />
+      <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
 }
 
 export default function SetupScreen() {
   const [topic, setTopic] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [targetIds, setTargetIds] = useState<string[]>([]);
   const [agents, setAgents] = useState<AgentData[]>([]);
   const [edges, setEdges] = useState<EdgeData[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [societyReady, setSocietyReady] = useState(false);
-  const setTimeline = useSimStore((s) => s.setTimeline);
-  const setLoading = useSimStore((s) => s.setLoading);
-  const loading = useSimStore((s) => s.loading);
-
-  const selectedAgents = agents.filter((a) => targetIds.includes(a.id));
-
-  function toggleTarget(id: string) {
-    setTargetIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : prev.length < 3
-          ? [...prev, id]
-          : prev
-    );
-  }
+  const startSession = useSimStore((s) => s.startSession);
 
   async function handleGenerate() {
     if (!topic.trim()) return;
     setGenerating(true);
     setError(null);
-    setTargetIds([]);
     try {
       const data = await populateSociety("polarized", 25, topic);
       setAgents(data.agents);
@@ -274,21 +219,15 @@ export default function SetupScreen() {
     }
   }
 
-  async function handleInject() {
-    if (!prompt.trim() || targetIds.length === 0) return;
-    setLoading(true);
+  async function handleStart() {
+    setStarting(true);
     setError(null);
     try {
-      const timeline = await runSimulation({
-        prompt,
-        target_agent_ids: targetIds,
-        society_type: "polarized",
-        n_agents: 25,
-      });
-      setTimeline(timeline, prompt);
+      const sim = await createSim(topic, "polarized", 25, true);
+      startSession(sim.sim_id, sim.topic, sim.agents, sim.edges);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Simulation failed");
-      setLoading(false);
+      setError(e instanceof Error ? e.message : "Failed to start simulation");
+      setStarting(false);
     }
   }
 
@@ -338,95 +277,37 @@ export default function SetupScreen() {
         </div>
       )}
 
-      {/* Main — after society generated */}
+      {/* Preview — after society generated */}
       {societyReady && (
-        <div className="flex-1 flex gap-0 overflow-hidden mx-6 mb-6" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
-          {/* Canvas */}
+        <div className="flex-1 flex flex-col overflow-hidden mx-6 mb-6" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
           <div className="flex-1 relative">
-            <PreviewCanvas agents={agents} edges={edges} selectedIds={targetIds} onSelect={toggleTarget} />
-            {targetIds.length < 3 && (
-              <div className="absolute bottom-5 left-1/2 -translate-x-1/2 px-4 py-2" style={{ background: CARD, border: `1px solid ${TEXT_PRIMARY}` }}>
-                <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
-                  {targetIds.length === 0 ? "click up to 3 targets" : `${targetIds.length}/3 selected — pick more or inject`}
-                </span>
-              </div>
-            )}
+            <PreviewCanvas agents={agents} edges={edges} />
             {/* Topic banner */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-1.5" style={{ background: CARD, border: `1px solid ${TEXT_PRIMARY}` }}>
               <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
                 {topic}
               </span>
             </div>
-          </div>
-
-          {/* Right panel */}
-          <div className="w-80 p-5 flex flex-col gap-4" style={{ background: CARD, borderLeft: `2px solid ${TEXT_PRIMARY}` }}>
-            {selectedAgents.length > 0 ? (
-              <div className="space-y-2 max-h-52 overflow-y-auto">
-                {selectedAgents.map((a) => (
-                  <div key={a.id} className="p-2" style={{ border: `1px solid ${TEXT_PRIMARY}` }}>
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-bold uppercase tracking-wide" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
-                        {a.name}
-                      </div>
-                      <button onClick={() => toggleTarget(a.id)} className="text-xs uppercase" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>x</button>
-                    </div>
-                    {a.stance && (
-                      <div className="text-xs mt-1 leading-relaxed" style={{ color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace", fontSize: "10px" }}>
-                        &ldquo;{a.stance}&rdquo;
-                      </div>
-                    )}
-                    <div className="mt-1 flex gap-3 text-xs" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace", fontSize: "9px" }}>
-                      <span>POS <span style={{ color: TEXT_PRIMARY }}>{a.position.toFixed(2)}</span></span>
-                      <span>OPN <span style={{ color: TEXT_PRIMARY }}>{((a.openness ?? 0.5) * 100).toFixed(0)}%</span></span>
-                      <span>ID <span style={{ color: TEXT_PRIMARY }}>{(a.identity_attachment * 100).toFixed(0)}%</span></span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-3 text-center" style={{ border: `1px solid ${TEXT_MUTED}` }}>
-                <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>
-                  select up to 3 targets
-                </span>
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs block mb-1.5 uppercase tracking-wider" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>
-                your argument
-              </label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="write something persuasive..."
-                rows={5}
-                className="w-full px-3 py-2 text-xs resize-none focus:outline-none"
-                style={{ background: "transparent", border: `1px solid ${TEXT_PRIMARY}`, color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}
-              />
-            </div>
-
-            <button
-              onClick={handleInject}
-              disabled={!prompt.trim() || targetIds.length === 0 || loading}
-              className="w-full py-2.5 text-xs uppercase tracking-widest transition-all disabled:opacity-25 disabled:cursor-not-allowed"
-              style={{ background: TEXT_PRIMARY, color: CARD, fontFamily: "'Courier New', monospace", fontWeight: 700 }}
-            >
-              {loading ? "simulating..." : "inject & watch"}
-            </button>
-
-            {error && (
-              <div className="text-xs text-center px-3 py-2" style={{ border: "1px solid #1a1a1a", color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
-                {error}
-              </div>
-            )}
-
-            <div className="mt-auto text-center">
-              <span className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace" }}>
-                25 agents / {topic} / {targetIds.length} target{targetIds.length !== 1 ? "s" : ""}
+            {/* Start button */}
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
+              <button
+                onClick={handleStart}
+                disabled={starting}
+                className="px-8 py-3 text-xs uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: TEXT_PRIMARY, color: CARD, fontFamily: "'Courier New', monospace", fontWeight: 700 }}
+              >
+                {starting ? "starting..." : "start simulation"}
+              </button>
+              <span className="text-xs uppercase tracking-wider px-3 py-1" style={{ color: TEXT_MUTED, fontFamily: "'Courier New', monospace", background: CARD }}>
+                25 agents / {topic}
               </span>
             </div>
           </div>
+          {error && (
+            <div className="text-xs text-center px-3 py-2" style={{ borderTop: `1px solid ${TEXT_PRIMARY}`, color: TEXT_PRIMARY, fontFamily: "'Courier New', monospace" }}>
+              {error}
+            </div>
+          )}
         </div>
       )}
     </div>

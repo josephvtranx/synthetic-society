@@ -18,7 +18,7 @@ type RenderState = {
   lookAngle: number;
   lookTarget: number;
   shiftDelta: number;
-  shiftSource: "direct" | "pressure" | null;
+  shiftSource: "argument" | "direct" | "pressure" | null;
   shiftAge: number;
   speechBubble: { text: string; age: number } | null;
 };
@@ -229,7 +229,7 @@ export default function NetworkGraph() {
   const edges = useSimStore((s) => s.edges);
   const selectAgent = useSimStore((s) => s.selectAgent);
   const selectedAgentId = useSimStore((s) => s.selectedAgentId);
-  const targetAgentIds = useSimStore((s) => s.timeline?.target_agent_ids ?? []);
+  const targetAgentIds = useSimStore((s) => s.targetAgentIds);
   const snapshot = useCurrentSnapshot();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -239,7 +239,6 @@ export default function NetworkGraph() {
   const lastTickRef = useRef(-1);
 
   const shifts = snapshot?.shifts ?? [];
-  const propagations = snapshot?.propagations ?? [];
   const currentTick = snapshot?.tick ?? 0;
 
   const conversations = snapshot?.conversations ?? [];
@@ -251,8 +250,8 @@ export default function NetworkGraph() {
       const s = statesRef.current.get(agent.id);
       if (!s) continue;
       const shift = shifts.find((sh) => sh.agent_id === agent.id);
-      const resisted = propagations.find((p) => p.to_id === agent.id && p.resisted);
-      const pressured = propagations.find((p) => p.to_id === agent.id && !p.resisted);
+      // Check if agent is in a conversation this tick
+      const inConvo = conversations.find((c) => c.from_id === agent.id || c.to_id === agent.id);
 
       if (shift) {
         s.expression = "shifted";
@@ -260,10 +259,7 @@ export default function NetworkGraph() {
         s.shiftDelta = shift.delta;
         s.shiftSource = shift.source;
         s.shiftAge = 0;
-      } else if (resisted) {
-        s.expression = "resistant";
-        s.shiftAge = 0;
-      } else if (pressured) {
+      } else if (inConvo) {
         s.expression = "thinking";
         s.shiftAge = 0;
       } else {
@@ -373,16 +369,17 @@ export default function NetworkGraph() {
         const bx = pad + sb.x * gw;
         const by = pad + sb.y * gh;
 
-        const prop = propagations.find(
-          (p) => (p.from_id === edge.source && p.to_id === edge.target) ||
-                 (p.from_id === edge.target && p.to_id === edge.source)
+        // Check if this edge has an active conversation
+        const activeConvo = conversations.find(
+          (c) => (c.from_id === edge.source && c.to_id === edge.target) ||
+                 (c.from_id === edge.target && c.to_id === edge.source)
         );
 
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
 
-        if (prop && sa.shiftAge >= 0 && sa.shiftAge < 2) {
+        if (activeConvo && sa.shiftAge >= 0 && sa.shiftAge < 2) {
           const flash = Math.max(0, 1 - sa.shiftAge / 2);
           ctx.strokeStyle = `rgba(26,26,26,${0.06 + flash * 0.3})`;
           ctx.lineWidth = 1 + flash * 2;
@@ -482,7 +479,7 @@ export default function NetworkGraph() {
 
       animRef.current = requestAnimationFrame(draw);
     },
-    [agents, edges, selectedAgentId, targetAgentIds, shifts, propagations, conversations],
+    [agents, edges, selectedAgentId, targetAgentIds, shifts, conversations],
   );
 
   useEffect(() => {

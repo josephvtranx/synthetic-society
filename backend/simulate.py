@@ -22,6 +22,7 @@ import time
 
 from agent import Agent, generate_population
 from network import create_society_graph
+from persuasion_classifier import predict_argument_quality
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 logger = logging.getLogger("sim")
@@ -391,6 +392,12 @@ async def generate_agent_conversation(
     speaker_stance = stances.get(speaker.id, f"position {speaker.position:+.2f}")
     listener_stance = stances.get(listener.id, f"position {listener.position:+.2f}")
 
+    # Default dialogue + types in case LLM fails
+    speaker_message = f"I think you should consider: {topic}."
+    listener_response = "I hear you, but I see it differently."
+    speaker_arg_type = "social"
+    listener_arg_type = "social"
+
     if client:
         try:
             t0 = time.time()
@@ -401,16 +408,13 @@ async def generate_agent_conversation(
                     f"Simulate a realistic two-person conversation about: {topic}\n"
                     "Each person speaks in their own voice and argues from their actual position. "
                     "SPEAKER goes first; LISTENER responds. Keep each turn to 1-3 sentences.\n\n"
-                    "After generating the dialogue, classify each person's argument:\n"
-                    "  type: evidence | social | emotional | repetition\n"
-                    "  quality: 0.0–1.0 (how compelling is their argument for THIS listener)\n\n"
+                    "Classify each person's argument type:\n"
+                    "  type: evidence | social | emotional | repetition\n\n"
                     "Return ONLY valid JSON:\n"
                     '{"speaker_message": "...", '
                     '"speaker_arg_type": "evidence|social|emotional|repetition", '
-                    '"speaker_arg_quality": 0.0, '
                     '"listener_response": "...", '
-                    '"listener_arg_type": "evidence|social|emotional|repetition", '
-                    '"listener_arg_quality": 0.0}'
+                    '"listener_arg_type": "evidence|social|emotional|repetition"}'
                 ),
                 messages=[{"role": "user", "content": (
                     f"SPEAKER: {speaker.name}, age {speaker.age}, "
@@ -428,38 +432,49 @@ async def generate_agent_conversation(
             )
             result = _extract_json(response.content[0].text)
             elapsed = time.time() - t0
+            speaker_message = result.get("speaker_message", speaker_message)
+            listener_response = result.get("listener_response", listener_response)
+            speaker_arg_type = result.get("speaker_arg_type", "social")
+            listener_arg_type = result.get("listener_arg_type", "social")
             logger.info(
                 f"  Convo LLM ({elapsed:.1f}s): {speaker.name}↔{listener.name} "
-                f"s_type={result.get('speaker_arg_type')} s_q={result.get('speaker_arg_quality')} "
-                f"l_type={result.get('listener_arg_type')} l_q={result.get('listener_arg_quality')}"
+                f"s_type={speaker_arg_type} l_type={listener_arg_type}"
             )
-            return {
-                "speaker_message":     result.get("speaker_message", ""),
-                "speaker_arg_type":    result.get("speaker_arg_type", "social"),
-                "speaker_arg_quality": max(0.0, min(1.0, float(result.get("speaker_arg_quality", 0.5)))),
-                "listener_response":   result.get("listener_response", ""),
-                "listener_arg_type":   result.get("listener_arg_type", "social"),
-                "listener_arg_quality": max(0.0, min(1.0, float(result.get("listener_arg_quality", 0.5)))),
-            }
         except Exception as e:
             logger.error(f"  Convo LLM error ({speaker.name}↔{listener.name}): {e}")
 
+    # Score both messages with CMV classifier
+    speaker_quality = predict_argument_quality(speaker_message)
+    listener_quality = predict_argument_quality(listener_response)
+    logger.info(
+        f"  CMV quality: {speaker.name}={speaker_quality:.3f} "
+        f"{listener.name}={listener_quality:.3f}"
+    )
+
     return {
-        "speaker_message":     f"I think you should consider: {topic}.",
-        "speaker_arg_type":    "social",
-        "speaker_arg_quality": 0.5,
-        "listener_response":   "I hear you, but I see it differently.",
-        "listener_arg_type":   "social",
-        "listener_arg_quality": 0.4,
+        "speaker_message":     speaker_message,
+        "speaker_arg_type":    speaker_arg_type,
+        "speaker_arg_quality": speaker_quality,
+        "listener_response":   listener_response,
+        "listener_arg_type":   listener_arg_type,
+        "listener_arg_quality": listener_quality,
     }
 
 
 # ── LLM: classify user-injected argument ─────────────────────────────────────
 async def classify_user_argument(prompt: str, topic: str, target: Agent) -> dict:
     """
-    Classify a user-written prompt via LLM and generate target's response.
+    Classify a user-written argument.
+    arg_quality comes from the CMV-trained classifier (empirically grounded).
+    arg_type, arg_position, and agent_response come from the LLM.
     Returns {arg_type, arg_quality, arg_position, agent_response}.
     """
+    # ── arg_quality from CMV classifier (instant, no LLM call) ──
+    t0 = time.time()
+    arg_quality = predict_argument_quality(prompt)
+    logger.info(f"  CMV classifier ({time.time() - t0:.2f}s): arg_quality={arg_quality:.3f}")
+
+    # ── arg_type, arg_position, agent_response from LLM ──
     client = _get_client()
     if client:
         try:
@@ -469,10 +484,9 @@ async def classify_user_argument(prompt: str, topic: str, target: Agent) -> dict
                 system=(
                     "Classify this argument and generate the target person's spoken response.\n\n"
                     "arg_type: evidence | social | emotional | repetition\n"
-                    "arg_quality: 0.0–1.0 (how compelling for THIS person given their traits)\n"
                     "arg_position: −1.0 to +1.0 (what position does this argument push toward)\n\n"
                     "Return ONLY valid JSON:\n"
-                    '{"arg_type": "...", "arg_quality": 0.0, "arg_position": 0.0, '
+                    '{"arg_type": "...", "arg_position": 0.0, '
                     '"agent_response": "1-2 sentences in character"}'
                 ),
                 messages=[{"role": "user", "content": (
@@ -488,7 +502,7 @@ async def classify_user_argument(prompt: str, topic: str, target: Agent) -> dict
             result = _extract_json(response.content[0].text)
             return {
                 "arg_type":       result.get("arg_type", "social"),
-                "arg_quality":    max(0.0, min(1.0, float(result.get("arg_quality", 0.5)))),
+                "arg_quality":    arg_quality,
                 "arg_position":   max(-1.0, min(1.0, float(result.get("arg_position", 0.3)))),
                 "agent_response": result.get("agent_response", "Hmm, I'll think about that."),
             }
@@ -497,7 +511,7 @@ async def classify_user_argument(prompt: str, topic: str, target: Agent) -> dict
 
     return {
         "arg_type":       "social",
-        "arg_quality":    0.5,
+        "arg_quality":    arg_quality,
         "arg_position":   0.3,
         "agent_response": "That's an interesting perspective. I'm not sure I fully agree.",
     }
@@ -618,11 +632,18 @@ async def next_tick(
     shifts = []
 
     if pairs:
-        # Generate all conversations in parallel
-        conv_results = await asyncio.gather(*[
-            generate_agent_conversation(agents[a_id], agents[b_id], topic, stances)
-            for a_id, b_id in pairs
-        ])
+        # Generate conversations in batches of 5 to avoid rate limits
+        BATCH_SIZE = 5
+        conv_results = []
+        for i in range(0, len(pairs), BATCH_SIZE):
+            batch = pairs[i:i + BATCH_SIZE]
+            batch_results = await asyncio.gather(*[
+                generate_agent_conversation(agents[a_id], agents[b_id], topic, stances)
+                for a_id, b_id in batch
+            ])
+            conv_results.extend(batch_results)
+            if i + BATCH_SIZE < len(pairs):
+                await asyncio.sleep(1.5)
 
         for (a_id, b_id), conv in zip(pairs, conv_results):
             agent_a = agents[a_id]

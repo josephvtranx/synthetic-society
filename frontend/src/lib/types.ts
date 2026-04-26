@@ -27,14 +27,7 @@ export type AgentShift = {
   agent_id: string;
   delta: number;
   new_position: number;
-  source: "direct" | "pressure";
-};
-
-export type Propagation = {
-  from_id: string;
-  to_id: string;
-  pressure: number;
-  resisted: boolean;
+  source: "argument" | "direct" | "pressure";
 };
 
 export type Conversation = {
@@ -42,7 +35,11 @@ export type Conversation = {
   to_id: string;
   speaker_message: string;
   listener_response: string;
-  shift: number;
+  speaker_arg_type?: string;
+  listener_arg_type?: string;
+  edge_trust?: number;
+  delta_on_speaker?: number;
+  delta_on_listener?: number;
   tick: number;
 };
 
@@ -51,8 +48,11 @@ export type TickSnapshot = {
   tick: number;
   agents: AgentData[];
   shifts: AgentShift[];
-  propagations: Propagation[];
   conversations: Conversation[];
+  n_pairs?: number;
+  n_unpaired?: number;
+  trust_changes?: { removed: number; added: number };
+  edges?: EdgeData[];
 };
 
 // Probe results after sim completes
@@ -64,19 +64,19 @@ export type ProbeResult = {
   probe_answer: string;
 };
 
-// Full timeline returned by backend after sim runs
-export type SimTimeline = {
-  target_agent_ids: string[];
-  edges: EdgeData[];
-  ticks: TickSnapshot[];
-  conversations: Conversation[];
-  probe_results: ProbeResult[];
-  summary: {
-    total_shifted: number;
-    genuine_count: number;
-    surface_count: number;
-    clusters_reached: number;
-  };
+// Inject result returned by /sim/{id}/inject
+export type InjectResult = {
+  from_id: string;
+  to_id: string;
+  speaker_message: string;
+  listener_response: string;
+  arg_type: string;
+  arg_quality: number;
+  delta_arg: number;
+  delta_peer: number;
+  actual_delta: number;
+  new_position: number;
+  agent: AgentData;
 };
 
 // What the player submits

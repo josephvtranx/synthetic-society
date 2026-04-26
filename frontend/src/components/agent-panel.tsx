@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useSelectedAgent, useSimStore, useCurrentSnapshot, useProbeResults, useAgentConversations, useCurrentAgents } from "@/lib/store";
+import { injectArgument } from "@/lib/api";
 import { CARD, TEXT_PRIMARY, TEXT_MUTED } from "@/lib/colors";
 
 function positionLabel(p: number): string {
@@ -31,11 +33,35 @@ export default function AgentPanel() {
   const snapshot = useCurrentSnapshot();
   const probeResults = useProbeResults();
   const screen = useSimStore((s) => s.screen);
+  const simId = useSimStore((s) => s.simId);
+  const addInjectResult = useSimStore((s) => s.addInjectResult);
   const agentConversations = useAgentConversations(agent?.id ?? null);
   const allAgents = useCurrentAgents();
 
+  const [prompt, setPrompt] = useState("");
+  const [injecting, setInjecting] = useState(false);
+  const [lastResult, setLastResult] = useState<string | null>(null);
+
   const mono = { fontFamily: "'Courier New', monospace" };
   const nameById = (id: string) => id === "player" ? "You" : allAgents.find((a) => a.id === id)?.name?.split(" ")[0] ?? id.slice(0, 6);
+
+  async function handleInject() {
+    if (!prompt.trim() || !agent || !simId) return;
+    setInjecting(true);
+    setLastResult(null);
+    try {
+      const result = await injectArgument(simId, agent.id, prompt);
+      addInjectResult(result, agent.id);
+      setLastResult(
+        `${result.actual_delta > 0 ? "+" : ""}${result.actual_delta.toFixed(3)} shift`
+      );
+      setPrompt("");
+    } catch (e) {
+      setLastResult("inject failed");
+    } finally {
+      setInjecting(false);
+    }
+  }
 
   if (!agent) {
     return (
@@ -68,7 +94,7 @@ export default function AgentPanel() {
         </div>
         {shift && (
           <div className="text-xs mt-1 font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>
-            {shift.delta > 0 ? "+" : ""}{shift.delta.toFixed(3)} ({shift.source === "direct" ? "DIRECT" : "PRESSURE"})
+            {shift.delta > 0 ? "+" : ""}{shift.delta.toFixed(3)} ({shift.source.toUpperCase()})
           </div>
         )}
       </div>
@@ -90,6 +116,39 @@ export default function AgentPanel() {
         </div>
       </div>
 
+      {/* Inject UI — available during playback */}
+      {screen === "playback" && simId && (
+        <div className="pb-4 mb-4" style={{ borderBottom: `1px solid ${TEXT_PRIMARY}` }}>
+          <div className="text-xs mb-1.5 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
+            inject argument
+          </div>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleInject(); }
+            }}
+            placeholder="write something persuasive..."
+            rows={3}
+            className="w-full px-2 py-1.5 text-xs resize-none focus:outline-none mb-2"
+            style={{ background: "transparent", border: `1px solid ${TEXT_PRIMARY}`, color: TEXT_PRIMARY, ...mono }}
+          />
+          <button
+            onClick={handleInject}
+            disabled={!prompt.trim() || injecting}
+            className="w-full py-1.5 text-xs uppercase tracking-widest transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+            style={{ background: TEXT_PRIMARY, color: CARD, ...mono, fontWeight: 700 }}
+          >
+            {injecting ? "injecting..." : "inject"}
+          </button>
+          {lastResult && (
+            <div className="text-xs mt-1.5 text-center" style={{ color: TEXT_MUTED, ...mono }}>
+              {lastResult}
+            </div>
+          )}
+        </div>
+      )}
+
       {agentConversations.length > 0 && (
         <div className="pt-4 mb-4" style={{ borderTop: `1px solid ${TEXT_PRIMARY}` }}>
           <div className="text-xs mb-2 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>conversations</div>
@@ -99,9 +158,9 @@ export default function AgentPanel() {
                 <div style={{ color: TEXT_MUTED, fontSize: "9px" }}>TICK {c.tick}</div>
                 <div><span style={{ fontWeight: 700 }}>{nameById(c.from_id)}:</span> {c.speaker_message}</div>
                 <div className="mt-0.5"><span style={{ fontWeight: 700 }}>{nameById(c.to_id)}:</span> {c.listener_response}</div>
-                {c.shift !== 0 && (
+                {c.delta_on_listener != null && c.delta_on_listener !== 0 && (
                   <div className="mt-0.5" style={{ color: TEXT_MUTED }}>
-                    shift: {c.shift > 0 ? "+" : ""}{c.shift.toFixed(3)}
+                    shift: {c.delta_on_listener > 0 ? "+" : ""}{c.delta_on_listener.toFixed(3)}
                   </div>
                 )}
               </div>

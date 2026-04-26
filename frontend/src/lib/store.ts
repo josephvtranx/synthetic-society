@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SimTimeline, AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult } from "./types";
 
 type Screen = "setup" | "playback" | "debrief";
 
@@ -10,10 +10,18 @@ type SimStore = {
   screen: Screen;
   loading: boolean;
 
-  // Timeline (set once after backend returns)
-  timeline: SimTimeline | null;
-  edges: EdgeData[];
+  // Session
+  simId: string | null;
+  topic: string;
+  targetAgentIds: string[];
   prompt: string;
+
+  // Incremental timeline
+  ticks: TickSnapshot[];
+  edges: EdgeData[];
+  injectResults: InjectResult[];
+  probeResults: ProbeResult[];
+  probeSummary: { total_shifted: number; genuine: number; surface: number } | null;
 
   // Playback state
   currentTick: number;
@@ -26,20 +34,31 @@ type SimStore = {
   // Actions
   setScreen: (screen: Screen) => void;
   setLoading: (loading: boolean) => void;
-  setTimeline: (timeline: SimTimeline, prompt?: string) => void;
+  startSession: (simId: string, topic: string, agents: AgentData[], edges: EdgeData[]) => void;
+  addInjectResult: (result: InjectResult, targetId: string) => void;
+  addTick: (snapshot: TickSnapshot) => void;
+  setProbeResults: (results: ProbeResult[], summary: { total_shifted: number; genuine: number; surface: number }) => void;
   setCurrentTick: (tick: number) => void;
   setPlaying: (playing: boolean) => void;
   setSpeed: (speed: PlaybackSpeed) => void;
   selectAgent: (id: string | null) => void;
+  setTargetAgentIds: (ids: string[]) => void;
+  setPrompt: (prompt: string) => void;
   reset: () => void;
 };
 
 export const useSimStore = create<SimStore>((set) => ({
   screen: "setup",
   loading: false,
-  timeline: null,
-  edges: [],
+  simId: null,
+  topic: "",
+  targetAgentIds: [],
   prompt: "",
+  ticks: [],
+  edges: [],
+  injectResults: [],
+  probeResults: [],
+  probeSummary: null,
   currentTick: 0,
   playing: false,
   speed: 1,
@@ -47,25 +66,99 @@ export const useSimStore = create<SimStore>((set) => ({
 
   setScreen: (screen) => set({ screen }),
   setLoading: (loading) => set({ loading }),
-  setTimeline: (timeline, prompt) =>
+
+  startSession: (simId, topic, agents, edges) =>
     set({
-      timeline,
-      edges: timeline.edges,
-      prompt: prompt ?? "",
+      simId,
+      topic,
+      edges,
+      ticks: [{
+        tick: 0,
+        agents,
+        shifts: [],
+        conversations: [],
+      }],
       currentTick: 0,
       screen: "playback",
+      playing: true,
       loading: false,
     }),
+
+  addInjectResult: (result, targetId) =>
+    set((state) => {
+      const newInjectResults = [...state.injectResults, result];
+      const newTargetIds = state.targetAgentIds.includes(targetId)
+        ? state.targetAgentIds
+        : [...state.targetAgentIds, targetId];
+
+      // Update the current tick's snapshot with the inject result
+      const updatedTicks = [...state.ticks];
+      const tickIdx = state.currentTick;
+      if (tickIdx < updatedTicks.length) {
+        const tick = { ...updatedTicks[tickIdx] };
+        tick.agents = tick.agents.map((a) =>
+          a.id === result.agent.id ? result.agent : a,
+        );
+        tick.conversations = [
+          ...tick.conversations,
+          {
+            from_id: result.from_id,
+            to_id: result.to_id,
+            speaker_message: result.speaker_message,
+            listener_response: result.listener_response,
+            tick: tick.tick,
+          },
+        ];
+        if (Math.abs(result.actual_delta) > 0.001) {
+          tick.shifts = [
+            ...tick.shifts,
+            {
+              agent_id: result.to_id,
+              delta: result.actual_delta,
+              new_position: result.new_position,
+              source: "direct",
+            },
+          ];
+        }
+        updatedTicks[tickIdx] = tick;
+      }
+
+      return {
+        injectResults: newInjectResults,
+        targetAgentIds: newTargetIds,
+        ticks: updatedTicks,
+      };
+    }),
+
+  addTick: (snapshot) =>
+    set((state) => {
+      const newTicks = [...state.ticks, snapshot];
+      // Update edges if the tick includes them (dynamic trust)
+      const newEdges = snapshot.edges ?? state.edges;
+      return { ticks: newTicks, edges: newEdges };
+    }),
+
+  setProbeResults: (results, summary) =>
+    set({ probeResults: results, probeSummary: summary }),
+
   setCurrentTick: (tick) => set({ currentTick: tick }),
   setPlaying: (playing) => set({ playing }),
   setSpeed: (speed) => set({ speed }),
   selectAgent: (id) => set({ selectedAgentId: id }),
+  setTargetAgentIds: (ids) => set({ targetAgentIds: ids }),
+  setPrompt: (prompt) => set({ prompt }),
   reset: () =>
     set({
       screen: "setup",
-      timeline: null,
-      edges: [],
+      simId: null,
+      topic: "",
+      targetAgentIds: [],
       prompt: "",
+      ticks: [],
+      edges: [],
+      injectResults: [],
+      probeResults: [],
+      probeSummary: null,
       currentTick: 0,
       playing: false,
       selectedAgentId: null,
@@ -75,10 +168,9 @@ export const useSimStore = create<SimStore>((set) => ({
 
 // Selectors
 export const useCurrentSnapshot = (): TickSnapshot | null => {
-  const timeline = useSimStore((s) => s.timeline);
+  const ticks = useSimStore((s) => s.ticks);
   const tick = useSimStore((s) => s.currentTick);
-  if (!timeline) return null;
-  return timeline.ticks[tick] ?? null;
+  return ticks[tick] ?? null;
 };
 
 export const useCurrentAgents = (): AgentData[] => {
@@ -87,8 +179,7 @@ export const useCurrentAgents = (): AgentData[] => {
 };
 
 export const useProbeResults = (): ProbeResult[] => {
-  const timeline = useSimStore((s) => s.timeline);
-  return timeline?.probe_results ?? [];
+  return useSimStore((s) => s.probeResults);
 };
 
 export const useSelectedAgent = (): AgentData | null => {
@@ -99,8 +190,8 @@ export const useSelectedAgent = (): AgentData | null => {
 };
 
 export const useTotalTicks = (): number => {
-  const timeline = useSimStore((s) => s.timeline);
-  return timeline ? timeline.ticks.length - 1 : 0;
+  const ticks = useSimStore((s) => s.ticks);
+  return Math.max(0, ticks.length - 1);
 };
 
 export const useCurrentConversations = (): Conversation[] => {
@@ -109,10 +200,16 @@ export const useCurrentConversations = (): Conversation[] => {
 };
 
 export const useAgentConversations = (agentId: string | null): Conversation[] => {
-  const timeline = useSimStore((s) => s.timeline);
+  const ticks = useSimStore((s) => s.ticks);
   const currentTick = useSimStore((s) => s.currentTick);
-  if (!timeline || !agentId) return [];
-  return timeline.conversations.filter(
-    (c) => (c.from_id === agentId || c.to_id === agentId) && c.tick <= currentTick
-  );
+  if (!agentId) return [];
+  const convos: Conversation[] = [];
+  for (let t = 0; t <= currentTick && t < ticks.length; t++) {
+    for (const c of ticks[t].conversations) {
+      if (c.from_id === agentId || c.to_id === agentId) {
+        convos.push(c);
+      }
+    }
+  }
+  return convos;
 };

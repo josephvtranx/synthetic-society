@@ -1,25 +1,52 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSimStore, useProbeResults, useCurrentAgents } from "@/lib/store";
+import { runProbe } from "@/lib/api";
 import { BG, CARD, TEXT_PRIMARY, TEXT_MUTED } from "@/lib/colors";
 
 export default function DebriefScreen() {
-  const timeline = useSimStore((s) => s.timeline);
+  const simId = useSimStore((s) => s.simId);
   const probeResults = useProbeResults();
+  const probeSummary = useSimStore((s) => s.probeSummary);
+  const setProbeResults = useSimStore((s) => s.setProbeResults);
   const agents = useCurrentAgents();
   const selectAgent = useSimStore((s) => s.selectAgent);
   const reset = useSimStore((s) => s.reset);
   const setScreen = useSimStore((s) => s.setScreen);
+  const [probing, setProbing] = useState(false);
 
-  if (!timeline) return null;
-
-  const { summary } = timeline;
-  const genuineRate = summary.total_shifted > 0 ? Math.round((summary.genuine_count / summary.total_shifted) * 100) : 0;
-  const surfaceRate = summary.total_shifted > 0 ? Math.round((summary.surface_count / summary.total_shifted) * 100) : 0;
-  const genuineProbes = probeResults.filter((p) => p.shifted && p.genuine);
-  const surfaceProbes = probeResults.filter((p) => p.shifted && !p.genuine);
+  // Fetch probe results on mount if we don't have them yet
+  useEffect(() => {
+    if (!simId || probeResults.length > 0 || probing) return;
+    setProbing(true);
+    runProbe(simId)
+      .then((res) => {
+        setProbeResults(res.probe_results, res.summary);
+      })
+      .catch((e) => {
+        console.error("Probe failed:", e);
+      })
+      .finally(() => setProbing(false));
+  }, [simId]);
 
   const mono = { fontFamily: "'Courier New', monospace" };
+
+  if (probing) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ background: BG }}>
+        <p className="text-xs uppercase tracking-widest" style={{ color: TEXT_MUTED, ...mono }}>
+          probing agents...
+        </p>
+      </div>
+    );
+  }
+
+  const summary = probeSummary ?? { total_shifted: 0, genuine: 0, surface: 0 };
+  const genuineRate = summary.total_shifted > 0 ? Math.round((summary.genuine / summary.total_shifted) * 100) : 0;
+  const surfaceRate = summary.total_shifted > 0 ? Math.round((summary.surface / summary.total_shifted) * 100) : 0;
+  const genuineProbes = probeResults.filter((p) => p.shifted && p.genuine);
+  const surfaceProbes = probeResults.filter((p) => p.shifted && !p.genuine);
 
   return (
     <div className="flex-1 overflow-y-auto py-10 px-8" style={{ background: BG }}>
@@ -29,17 +56,15 @@ export default function DebriefScreen() {
             what was real?
           </h1>
           <p className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
-            {summary.clusters_reached} cluster{summary.clusters_reached !== 1 ? "s" : ""} reached
-            / {summary.total_shifted} shifted
+            {summary.total_shifted} shifted
           </p>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {[
             { value: summary.total_shifted, label: "shifted" },
-            { value: summary.genuine_count, label: "genuine" },
-            { value: summary.surface_count, label: "surface" },
-            { value: `${genuineRate}%`, label: "genuine rate" },
+            { value: summary.genuine, label: "genuine" },
+            { value: summary.surface, label: "surface" },
           ].map((card) => (
             <div key={card.label} className="p-4 text-center" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
               <div className="text-2xl font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>{card.value}</div>

@@ -2,41 +2,58 @@
 
 import { useEffect, useRef } from "react";
 import { useSimStore, useTotalTicks } from "@/lib/store";
+import { nextTick } from "@/lib/api";
 import { BG, TEXT_PRIMARY, TEXT_MUTED, CARD } from "@/lib/colors";
 
 export default function PlaybackControls() {
   const currentTick = useSimStore((s) => s.currentTick);
   const playing = useSimStore((s) => s.playing);
   const speed = useSimStore((s) => s.speed);
+  const simId = useSimStore((s) => s.simId);
   const setCurrentTick = useSimStore((s) => s.setCurrentTick);
   const setPlaying = useSimStore((s) => s.setPlaying);
   const setSpeed = useSimStore((s) => s.setSpeed);
   const setScreen = useSimStore((s) => s.setScreen);
+  const addTick = useSimStore((s) => s.addTick);
   const totalTicks = useTotalTicks();
 
+  const fetchingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const mono = { fontFamily: "'Courier New', monospace" };
 
   useEffect(() => {
     if (!playing) { clearInterval(intervalRef.current); return; }
-    const ms = 2000 / speed;
+    const ms = 5000 / speed;
     intervalRef.current = setInterval(() => {
-      useSimStore.setState((state) => {
-        const next = state.currentTick + 1;
-        if (next > totalTicks) return { playing: false, screen: "debrief" as const };
-        return { currentTick: next };
+      const state = useSimStore.getState();
+      const nextIdx = state.currentTick + 1;
+
+      // If we already have this tick loaded (rewound), scrub forward
+      if (nextIdx < state.ticks.length) {
+        useSimStore.setState({ currentTick: nextIdx });
+        return;
+      }
+
+      // Fetch a new tick from the backend
+      if (fetchingRef.current || !state.simId) return;
+      fetchingRef.current = true;
+
+      nextTick(state.simId).then((snapshot) => {
+        useSimStore.getState().addTick(snapshot);
+        useSimStore.setState({ currentTick: nextIdx });
+        fetchingRef.current = false;
+      }).catch(() => {
+        fetchingRef.current = false;
+        useSimStore.setState({ playing: false });
       });
     }, ms);
     return () => clearInterval(intervalRef.current);
-  }, [playing, speed, totalTicks]);
+  }, [playing, speed]);
 
   return (
     <div className="px-5 py-3 flex items-center gap-4" style={{ background: BG, borderTop: `2px solid ${TEXT_PRIMARY}` }}>
       <button
-        onClick={() => {
-          if (currentTick >= totalTicks) { setCurrentTick(0); setPlaying(true); }
-          else setPlaying(!playing);
-        }}
+        onClick={() => setPlaying(!playing)}
         className="w-8 h-8 flex items-center justify-center transition-colors"
         style={{ border: `2px solid ${TEXT_PRIMARY}`, background: CARD }}
       >
@@ -65,7 +82,7 @@ export default function PlaybackControls() {
           style={{ background: "rgba(0,0,0,0.12)", accentColor: TEXT_PRIMARY }}
         />
         <span className="text-xs tabular-nums w-14 text-right font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>
-          {currentTick}/{totalTicks}
+          tick {currentTick}
         </span>
       </div>
 
@@ -86,9 +103,9 @@ export default function PlaybackControls() {
         ))}
       </div>
 
-      <button onClick={() => { setPlaying(false); setCurrentTick(totalTicks); setScreen("debrief"); }}
-        className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
-        skip
+      <button onClick={() => { setPlaying(false); setScreen("debrief"); }}
+        className="text-xs uppercase tracking-widest font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>
+        end &amp; probe
       </button>
     </div>
   );
