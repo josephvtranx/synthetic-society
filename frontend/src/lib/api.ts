@@ -24,6 +24,21 @@ export type ProbeResponse = {
   };
 };
 
+export async function generateArgument(topic: string): Promise<string> {
+  const res = await fetch(`${API_URL}/generate-argument`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ topic }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Argument generation failed: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return data.argument;
+}
+
 export async function populateSociety(
   societyType: string = "polarized",
   nAgents: number = 25,

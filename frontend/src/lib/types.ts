@@ -86,3 +86,20 @@ export type PlayerInjection = {
   society_type: "polarized" | "consensus" | "random";
   n_agents: number;
 };
+
+// Influence Currency
+export type InfluenceAction =
+  | { type: "scout"; agentId: string; cost: number }
+  | { type: "inject"; agentId: string; cost: number };
+
+export type OvertonWindow = {
+  low: number;
+  high: number;
+  center: number;
+  width: number;
+};
+
+export const INFLUENCE_BUDGET = 100;
+export const COST_SCOUT = 5;
+export const COST_INJECT = 30;
+export const OVERTON_PERCENTILE = 0.15;

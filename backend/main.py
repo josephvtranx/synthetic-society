@@ -9,6 +9,7 @@ Endpoints:
   GET  /sim/{sim_id}/state    — get current state + full history
   POST /sim/{sim_id}/probe    — run probes on shifted agents
 """
+from __future__ import annotations
 
 import uuid
 import asyncio
@@ -72,6 +73,60 @@ def _make_edges(graph) -> list:
         {"source": u, "target": v, "weight": round(data.get("weight", 1.0), 3)}
         for u, v, data in graph.edges(data=True)
     ]
+
+
+class GenerateArgumentRequest(BaseModel):
+    topic: str
+
+
+@app.post("/generate-argument")
+async def generate_argument(req: GenerateArgumentRequest):
+    """
+    Transform a topic into a structured CMV-style argument.
+    Returns the generated argument text.
+    """
+    from simulate import _get_client, PROBE_MODEL, _extract_json
+    client = _get_client()
+
+    if client:
+        try:
+            response = await client.messages.create(
+                model=PROBE_MODEL,
+                max_tokens=300,
+                system=(
+                    "You generate structured persuasive arguments in the style of Reddit's "
+                    "r/ChangeMyView (CMV). Given a topic, write a compelling argument that "
+                    "takes a clear position.\n\n"
+                    "Structure:\n"
+                    "1. CLAIM — one clear sentence stating the position\n"
+                    "2. BECAUSE — 2-3 reasons, each one sentence, grounded in evidence or lived experience\n"
+                    "3. EVEN THOUGH — acknowledge the strongest counterargument in one sentence\n"
+                    "4. THEREFORE — restate why the position holds despite the counterargument\n\n"
+                    "Write in first person, conversational but substantive. No bullet points or labels — "
+                    "just flowing prose that follows this structure naturally. Keep it under 150 words.\n\n"
+                    "Return ONLY valid JSON: {\"argument\": \"the full argument text\"}"
+                ),
+                messages=[{
+                    "role": "user",
+                    "content": f"Topic: {req.topic}",
+                }],
+            )
+            result = _extract_json(response.content[0].text)
+            return {"argument": result.get("argument", "")}
+        except Exception as e:
+            logger.error(f"Argument generation error: {e}")
+
+    # Demo fallback
+    return {
+        "argument": (
+            f"I believe we need to seriously rethink our approach to {req.topic}. "
+            f"The current system isn't working for most people — the data shows growing dissatisfaction, "
+            f"and the people most affected rarely get a voice in the conversation. "
+            f"I understand there are valid concerns about unintended consequences and implementation costs. "
+            f"But the cost of doing nothing is higher. We can design policy that addresses these concerns "
+            f"while still making meaningful progress."
+        ),
+    }
 
 
 # ── /populate (preview + cache) ───────────────────────────────────────────────
@@ -285,5 +340,115 @@ async def run_probe(sim_id: str, body: dict = {}):
             "total_shifted": len(shifted),
             "genuine":       genuine,
             "surface":       len(shifted) - genuine,
+        },
+    }
+
+
+# ── /simulate (batch compatibility) ─────────────────────────────────────────
+class SimulateRequest(BaseModel):
+    prompt: str
+    target_agent_ids: list[str] = []
+    society_type: str = "polarized"
+    n_agents: int = 25
+
+
+@app.post("/simulate")
+async def simulate(req: SimulateRequest):
+    """
+    Batch compatibility endpoint — runs a full 20-tick simulation in one call.
+    Wraps the interactive API: create session, inject, run 20 ticks, probe.
+    Returns SimTimeline matching the frontend's expected format.
+    """
+    n = max(5, min(50, req.n_agents))
+    topic = req.prompt[:80]
+
+    # Reuse cached population if available
+    if _cached_agents and _cached_graph is not None:
+        agents = _cached_agents
+        graph = _cached_graph
+        stances = _cached_stances or await generate_all_stances(agents, topic)
+    else:
+        agents = generate_population(n, topic, req.society_type)
+        graph = create_society_graph(agents)
+        stances = await generate_all_stances(agents, topic)
+
+    original_positions = {a.id: a.position for a in agents.values()}
+
+    # Tick 0: initial state
+    ticks = [{
+        "tick": 0,
+        "agents": [_serialize_agent(a, stances) for a in agents.values()],
+        "shifts": [],
+        "propagations": [],
+        "conversations": [],
+    }]
+    all_conversations = []
+
+    # Inject argument to each target
+    for tid in req.target_agent_ids:
+        if tid in agents:
+            result = await inject_argument(agents, graph, stances, tid, req.prompt, topic)
+            if "error" not in result:
+                delta = result.get("actual_delta", 0)
+                if abs(delta) > 0.001:
+                    ticks[0]["shifts"].append({
+                        "agent_id": tid,
+                        "delta": round(delta, 4),
+                        "new_position": round(agents[tid].position, 4),
+                        "source": "direct",
+                    })
+
+    # Update tick 0 agents after injection
+    ticks[0]["agents"] = [_serialize_agent(a, stances) for a in agents.values()]
+
+    # Run 20 ticks
+    for t in range(1, 21):
+        snapshot = await next_tick(agents, graph, stances, topic, t)
+        conversations = snapshot.get("conversations", [])
+        all_conversations.extend(conversations)
+        ticks.append({
+            "tick": t,
+            "agents": snapshot["agents"],
+            "shifts": snapshot.get("shifts", []),
+            "propagations": [],
+            "conversations": conversations,
+        })
+
+    # Probe shifted agents
+    threshold = 0.05
+    shifted = [
+        a for a in agents.values()
+        if abs(a.position - original_positions.get(a.id, a.position)) > threshold
+    ]
+    probe_results = []
+    for i in range(0, len(shifted), 5):
+        batch = shifted[i:i + 5]
+        results = await asyncio.gather(*[
+            probe_agent(a, topic, original_positions.get(a.id, a.position))
+            for a in batch
+        ])
+        probe_results.extend(results)
+        if i + 5 < len(shifted):
+            await asyncio.sleep(1.0)
+
+    genuine = sum(1 for r in probe_results if r["genuine"])
+
+    # Figure out which clusters were reached
+    clusters_reached = len({
+        a.group_ids[0] for a in agents.values()
+        if a.group_ids and abs(a.position - original_positions.get(a.id, a.position)) > threshold
+    })
+
+    return {
+        "target_agent_ids": req.target_agent_ids,
+        "edges": _make_edges(graph),
+        "ticks": ticks,
+        "conversations": all_conversations,
+        "probe_results": probe_results,
+        "summary": {
+            "total_shifted": len(shifted),
+            "genuine_count": genuine,
+            "surface_count": len(shifted) - genuine,
+            "clusters_reached": clusters_reached,
         },
     }

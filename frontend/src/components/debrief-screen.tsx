@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSimStore, useProbeResults, useCurrentAgents } from "@/lib/store";
+import { useSimStore, useProbeResults, useCurrentAgents, useOvertonWindow, useInitialOvertonWindow } from "@/lib/store";
 import { runProbe } from "@/lib/api";
 import { BG, CARD, TEXT_PRIMARY, TEXT_MUTED } from "@/lib/colors";
+import { INFLUENCE_BUDGET } from "@/lib/types";
 
 export default function DebriefScreen() {
   const simId = useSimStore((s) => s.simId);
@@ -15,6 +16,9 @@ export default function DebriefScreen() {
   const reset = useSimStore((s) => s.reset);
   const setScreen = useSimStore((s) => s.setScreen);
   const [probing, setProbing] = useState(false);
+  const influenceSpent = useSimStore((s) => s.influenceSpent);
+  const overton = useOvertonWindow();
+  const initialOverton = useInitialOvertonWindow();
 
   // Fetch probe results on mount if we don't have them yet
   useEffect(() => {
@@ -45,6 +49,7 @@ export default function DebriefScreen() {
   const summary = probeSummary ?? { total_shifted: 0, genuine: 0, surface: 0 };
   const genuineRate = summary.total_shifted > 0 ? Math.round((summary.genuine / summary.total_shifted) * 100) : 0;
   const surfaceRate = summary.total_shifted > 0 ? Math.round((summary.surface / summary.total_shifted) * 100) : 0;
+  const windowShift = overton && initialOverton ? overton.center - initialOverton.center : 0;
   const genuineProbes = probeResults.filter((p) => p.shifted && p.genuine);
   const surfaceProbes = probeResults.filter((p) => p.shifted && !p.genuine);
 
@@ -65,6 +70,9 @@ export default function DebriefScreen() {
             { value: summary.total_shifted, label: "shifted" },
             { value: summary.genuine, label: "genuine" },
             { value: summary.surface, label: "surface" },
+            { value: `${genuineRate}%`, label: "genuine rate" },
+            { value: `${windowShift >= 0 ? "+" : ""}${windowShift.toFixed(2)}`, label: "window shift" },
+            { value: `${influenceSpent}/${INFLUENCE_BUDGET}`, label: "IP spent" },
           ].map((card) => (
             <div key={card.label} className="p-4 text-center" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
               <div className="text-2xl font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>{card.value}</div>
@@ -92,6 +100,41 @@ export default function DebriefScreen() {
             <span><span style={{ display: "inline-block", width: 8, height: 8, background: "rgba(0,0,0,0.2)", marginRight: 4, border: `1px solid ${TEXT_PRIMARY}` }} />SURFACE</span>
           </div>
         </div>
+
+        {/* Overton Window before/after */}
+        {initialOverton && overton && (
+          <div className="p-4" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
+            <div className="text-xs mb-3 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>overton window shift</div>
+            {[
+              { label: "BEFORE", window: initialOverton, opacity: 0.3 },
+              { label: "AFTER", window: overton, opacity: 1 },
+            ].map((row) => (
+              <div key={row.label} className="flex items-center gap-3 mb-2">
+                <span className="text-xs w-12 uppercase" style={{ color: TEXT_MUTED, ...mono, fontSize: "9px" }}>{row.label}</span>
+                <div className="flex-1 relative h-3">
+                  <div className="absolute top-1/2 left-0 right-0 h-px" style={{ background: "rgba(0,0,0,0.1)" }} />
+                  <div
+                    className="absolute top-0 h-full"
+                    style={{
+                      left: `${((row.window.low + 1) / 2) * 100}%`,
+                      width: `${(row.window.width / 2) * 100}%`,
+                      background: `rgba(0,0,0,${0.08 * row.opacity})`,
+                      border: `1px solid ${TEXT_PRIMARY}`,
+                      opacity: row.opacity,
+                    }}
+                  />
+                  <div
+                    className="absolute top-0 h-full w-px"
+                    style={{ left: `${((row.window.center + 1) / 2) * 100}%`, background: TEXT_PRIMARY, opacity: row.opacity }}
+                  />
+                </div>
+                <span className="text-xs w-24 text-right" style={{ color: TEXT_PRIMARY, ...mono, fontSize: "9px" }}>
+                  [{row.window.low.toFixed(2)}, {row.window.high.toFixed(2)}]
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {genuineProbes.length > 0 && (
           <div>

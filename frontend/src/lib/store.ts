@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, InfluenceAction, OvertonWindow } from "./types";
+import { INFLUENCE_BUDGET, COST_SCOUT, COST_INJECT, OVERTON_PERCENTILE } from "./types";
 
 type Screen = "setup" | "playback" | "debrief";
 
@@ -31,6 +32,11 @@ type SimStore = {
   // Selection
   selectedAgentId: string | null;
 
+  // Influence currency
+  influenceSpent: number;
+  influenceActions: InfluenceAction[];
+  scoutedAgentIds: string[];
+
   // Actions
   setScreen: (screen: Screen) => void;
   setLoading: (loading: boolean) => void;
@@ -44,6 +50,8 @@ type SimStore = {
   selectAgent: (id: string | null) => void;
   setTargetAgentIds: (ids: string[]) => void;
   setPrompt: (prompt: string) => void;
+  scoutAgent: (id: string) => void;
+  spendInject: (targetIds: string[]) => void;
   reset: () => void;
 };
 
@@ -63,6 +71,9 @@ export const useSimStore = create<SimStore>((set) => ({
   playing: false,
   speed: 1,
   selectedAgentId: null,
+  influenceSpent: 0,
+  influenceActions: [],
+  scoutedAgentIds: [],
 
   setScreen: (screen) => set({ screen }),
   setLoading: (loading) => set({ loading }),
@@ -147,6 +158,28 @@ export const useSimStore = create<SimStore>((set) => ({
   selectAgent: (id) => set({ selectedAgentId: id }),
   setTargetAgentIds: (ids) => set({ targetAgentIds: ids }),
   setPrompt: (prompt) => set({ prompt }),
+  scoutAgent: (id) =>
+    set((state) => {
+      if (state.scoutedAgentIds.includes(id)) return state;
+      const cost = COST_SCOUT;
+      if (state.influenceSpent + cost > INFLUENCE_BUDGET) return state;
+      return {
+        scoutedAgentIds: [...state.scoutedAgentIds, id],
+        influenceSpent: state.influenceSpent + cost,
+        influenceActions: [...state.influenceActions, { type: "scout" as const, agentId: id, cost }],
+      };
+    }),
+  spendInject: (targetIds) =>
+    set((state) => {
+      const cost = targetIds.length * COST_INJECT;
+      return {
+        influenceSpent: state.influenceSpent + cost,
+        influenceActions: [
+          ...state.influenceActions,
+          ...targetIds.map((id) => ({ type: "inject" as const, agentId: id, cost: COST_INJECT })),
+        ],
+      };
+    }),
   reset: () =>
     set({
       screen: "setup",
@@ -163,6 +196,9 @@ export const useSimStore = create<SimStore>((set) => ({
       playing: false,
       selectedAgentId: null,
       loading: false,
+      influenceSpent: 0,
+      influenceActions: [],
+      scoutedAgentIds: [],
     }),
 }));
 
@@ -212,4 +248,31 @@ export const useAgentConversations = (agentId: string | null): Conversation[] =>
     }
   }
   return convos;
+};
+
+function computeOverton(agents: AgentData[]): OvertonWindow | null {
+  if (agents.length < 3) return null;
+  const positions = agents.map((a) => a.position).sort((a, b) => a - b);
+  const trimCount = Math.max(1, Math.floor(positions.length * OVERTON_PERCENTILE));
+  const trimmed = positions.slice(trimCount, positions.length - trimCount);
+  if (trimmed.length === 0) return null;
+  const low = trimmed[0];
+  const high = trimmed[trimmed.length - 1];
+  return { low, high, center: (low + high) / 2, width: high - low };
+}
+
+export const useOvertonWindow = (): OvertonWindow | null => {
+  const agents = useCurrentAgents();
+  return computeOverton(agents);
+};
+
+export const useInitialOvertonWindow = (): OvertonWindow | null => {
+  const ticks = useSimStore((s) => s.ticks);
+  if (ticks.length === 0) return null;
+  return computeOverton(ticks[0].agents);
+};
+
+export const useInfluenceRemaining = (): number => {
+  const spent = useSimStore((s) => s.influenceSpent);
+  return INFLUENCE_BUDGET - spent;
 };

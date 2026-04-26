@@ -11,6 +11,7 @@ Trust is dynamic:
   - Edges below MIN_TRUST are removed (echo chamber formation)
   - New edges form via triadic closure (friend-of-a-friend)
 """
+from __future__ import annotations
 
 import asyncio
 import random
