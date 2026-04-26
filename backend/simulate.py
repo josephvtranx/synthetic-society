@@ -644,24 +644,17 @@ async def generate_agent_conversation(
         try:
             t0 = time.time()
             response = await client.messages.create(
-                model=PROBE_MODEL,
-                max_tokens=800,
+                model=FAST_MODEL,
+                max_tokens=300,
                 system=(
-                    f"Simulate a realistic conversation between two people about: {topic}\n\n"
+                    f"Simulate a quick exchange between two people about: {topic}\n\n"
                     "RULES:\n"
-                    "- Each person speaks 3-5 sentences in their natural voice\n"
-                    "- They should reference specific personal experiences, anecdotes, or concrete examples\n"
-                    "- They should ACTUALLY ENGAGE with each other — push back, ask pointed questions, "
-                    "concede specific points, or double down with real reasons\n"
-                    "- Avoid generic platitudes like 'that's interesting' or 'I see your point' — "
-                    "make them argue like real people who care about this topic\n"
-                    "- If they disagree, show the tension. If they agree, show them building on each other's ideas\n"
-                    "- Their personality traits should shape HOW they argue, not just WHAT they say\n\n"
-                    "Classify each person's PRIMARY argument strategy:\n"
-                    "  evidence = cites facts, data, studies, specific outcomes\n"
-                    "  social = appeals to norms, what others think, community standards\n"
-                    "  emotional = appeals to values, fairness, personal impact, moral weight\n"
-                    "  repetition = restates existing position without new substance\n\n"
+                    "- Each person speaks 1-2 sentences MAX. Be punchy and direct.\n"
+                    "- No fluff, no pleasantries, no 'that's interesting' — just the core argument\n"
+                    "- Show real tension if they disagree, or build on ideas if they agree\n"
+                    "- Reference a specific fact, experience, or example — not abstract claims\n\n"
+                    "Classify each person's argument strategy:\n"
+                    "  evidence | social | emotional | repetition\n\n"
                     "Return ONLY valid JSON:\n"
                     '{"speaker_message": "...", '
                     '"speaker_arg_type": "evidence|social|emotional|repetition", '
@@ -881,8 +874,8 @@ async def next_tick(
     shifts = []
 
     if pairs:
-        # Generate conversations in batches of 3 (Sonnet is heavier than Haiku)
-        BATCH_SIZE = 3
+        # Generate conversations in batches of 6 (Haiku is fast enough)
+        BATCH_SIZE = 6
         conv_results = []
         for i in range(0, len(pairs), BATCH_SIZE):
             batch = pairs[i:i + BATCH_SIZE]
@@ -892,7 +885,7 @@ async def next_tick(
             ])
             conv_results.extend(batch_results)
             if i + BATCH_SIZE < len(pairs):
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(0.5)
 
         for (a_id, b_id), conv in zip(pairs, conv_results):
             agent_a = agents[a_id]

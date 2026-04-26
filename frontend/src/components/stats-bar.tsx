@@ -2,6 +2,7 @@
 
 import { useSimStore, useCurrentAgents, useCurrentSnapshot, useOvertonWindow } from "@/lib/store";
 import { BG, TEXT_PRIMARY, TEXT_MUTED } from "@/lib/colors";
+import PopulationHistogram from "./population-histogram";
 
 export default function StatsBar() {
   const screen = useSimStore((s) => s.screen);
@@ -45,50 +46,7 @@ export default function StatsBar() {
           {truncatedTopic}
         </div>
       </div>
-      {/* Overton Window visualization */}
-      {overton && (
-        <div className="px-5 pb-2" style={mono}>
-          <div className="relative h-4 mx-auto" style={{ maxWidth: 500 }}>
-            {/* Full range line */}
-            <div className="absolute top-1/2 left-0 right-0 h-px" style={{ background: "rgba(0,0,0,0.15)" }} />
-            {/* Labels */}
-            <span className="absolute left-0 top-full text-xs" style={{ color: TEXT_MUTED, fontSize: "8px", transform: "translateY(1px)" }}>-1</span>
-            <span className="absolute right-0 top-full text-xs" style={{ color: TEXT_MUTED, fontSize: "8px", transform: "translateY(1px)" }}>+1</span>
-            {/* Overton band */}
-            <div
-              className="absolute top-0 h-full transition-all duration-500"
-              style={{
-                left: `${((overton.low + 1) / 2) * 100}%`,
-                width: `${(overton.width / 2) * 100}%`,
-                background: "rgba(0,0,0,0.08)",
-                border: `1px solid ${TEXT_PRIMARY}`,
-              }}
-            />
-            {/* Agent dots */}
-            {agents.map((a) => (
-              <div
-                key={a.id}
-                className="absolute top-1/2 -translate-y-1/2 rounded-full transition-all duration-500"
-                style={{
-                  left: `${((a.position + 1) / 2) * 100}%`,
-                  width: 3,
-                  height: 3,
-                  background: TEXT_PRIMARY,
-                  opacity: 0.4,
-                }}
-              />
-            ))}
-            {/* Center marker */}
-            <div
-              className="absolute top-0 h-full w-px transition-all duration-500"
-              style={{
-                left: `${((overton.center + 1) / 2) * 100}%`,
-                background: TEXT_PRIMARY,
-              }}
-            />
-          </div>
-        </div>
-      )}
+      <PopulationHistogram />
     </div>
   );
 }
