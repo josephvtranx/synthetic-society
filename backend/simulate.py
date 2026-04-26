@@ -240,11 +240,6 @@ NEW_EDGE_TRUST = 0.10     # starting trust for triadic-closure-formed edges
 TRUST_DECAY = 0.998       # multiplicative decay per tick on all edges
 TRIADIC_SCALE = 0.15      # scales probability of a new edge forming per tick
 
-# Per-conversation belief movement tuning.
-# Increase these to make agents shift faster per conversation.
-ELM_DELTA_MULTIPLIER = 15
-ASCH_DELTA_MULTIPLIER = 15
-
 
 # ── JSON extraction ───────────────────────────────────────────────────────────
 def _extract_json(text: str) -> dict:
@@ -439,13 +434,7 @@ def _compute_elm_delta(
     cb_damp = 1.0 - (cb * alignment * 0.6)
 
     # Trust scales the whole delta (v2 additions, Step 6)
-    return (
-        (elab * d_central + (1.0 - elab) * d_periph)
-        * type_mult
-        * cb_damp
-        * trust
-        * ELM_DELTA_MULTIPLIER
-    )
+    return (elab * d_central + (1.0 - elab) * d_periph) * type_mult * cb_damp * trust
 
 
 # ── Asch peer pressure formula ────────────────────────────────────────────────
@@ -497,7 +486,7 @@ def _compute_asch_delta(agent: Agent, graph, agents: dict) -> float:
 
     p_update = min(0.32 * opp_ratio * u_mult * suscept, 0.80)
     if random.random() < p_update:
-        return (neighbor_mean - agent.position) * 0.08 * ASCH_DELTA_MULTIPLIER
+        return (neighbor_mean - agent.position) * 0.08
     return 0.0
 
 
@@ -656,16 +645,23 @@ async def generate_agent_conversation(
             t0 = time.time()
             response = await client.messages.create(
                 model=FAST_MODEL,
-                max_tokens=300,
+                max_tokens=500,
                 system=(
-                    f"Simulate a quick exchange between two people about: {topic}\n\n"
+                    f"Simulate a realistic conversation between two people about: {topic}\n\n"
                     "RULES:\n"
-                    "- Each person speaks 1-2 sentences MAX. Be punchy and direct.\n"
-                    "- No fluff, no pleasantries, no 'that's interesting' — just the core argument\n"
-                    "- Show real tension if they disagree, or build on ideas if they agree\n"
-                    "- Reference a specific fact, experience, or example — not abstract claims\n\n"
-                    "Classify each person's argument strategy:\n"
-                    "  evidence | social | emotional | repetition\n\n"
+                    "- Each person speaks 3-5 sentences in their natural voice\n"
+                    "- They should reference specific personal experiences, anecdotes, or concrete examples\n"
+                    "- They should ACTUALLY ENGAGE with each other — push back, ask pointed questions, "
+                    "concede specific points, or double down with real reasons\n"
+                    "- Avoid generic platitudes like 'that's interesting' or 'I see your point' — "
+                    "make them argue like real people who care about this topic\n"
+                    "- If they disagree, show the tension. If they agree, show them building on each other's ideas\n"
+                    "- Their personality traits should shape HOW they argue, not just WHAT they say\n\n"
+                    "Classify each person's PRIMARY argument strategy:\n"
+                    "  evidence = cites facts, data, studies, specific outcomes\n"
+                    "  social = appeals to norms, what others think, community standards\n"
+                    "  emotional = appeals to values, fairness, personal impact, moral weight\n"
+                    "  repetition = restates existing position without new substance\n\n"
                     "Return ONLY valid JSON:\n"
                     '{"speaker_message": "...", '
                     '"speaker_arg_type": "evidence|social|emotional|repetition", '
@@ -885,7 +881,7 @@ async def next_tick(
     shifts = []
 
     if pairs:
-        # Generate conversations in batches of 6 (Haiku is fast enough)
+        # Generate conversations in batches of 6 (Haiku is fast)
         BATCH_SIZE = 6
         conv_results = []
         for i in range(0, len(pairs), BATCH_SIZE):
@@ -958,12 +954,10 @@ async def next_tick(
 
             if abs(actual_b) > 0.001:
                 shifts.append({"agent_id": b_id,  "delta": round(actual_b, 4),
-                                "new_position": round(agent_b.position, 4), "source": "argument",
-                                "delta_arg": round(delta_arg_b, 4), "delta_peer": round(delta_peer_b, 4)})
+                                "new_position": round(agent_b.position, 4), "source": "argument"})
             if abs(actual_a) > 0.001:
                 shifts.append({"agent_id": a_id,  "delta": round(actual_a, 4),
-                                "new_position": round(agent_a.position, 4), "source": "argument",
-                                "delta_arg": round(delta_arg_a, 4), "delta_peer": round(delta_peer_a, 4)})
+                                "new_position": round(agent_a.position, 4), "source": "argument"})
 
     # Breaking event (random, ~30% chance per tick)
     event = await _generate_event(topic, tick)
@@ -1006,85 +1000,28 @@ async def next_tick(
 
 
 # ── Probe ─────────────────────────────────────────────────────────────────────
-def _compute_genuine_score(cumulative_arg: float, cumulative_peer: float) -> float:
-    """
-    Mechanical genuine score from accumulated ELM (argument) vs Asch (peer) deltas.
-
-    Returns 0-1 where:
-      1.0 = all shift came from engaging with arguments (genuine)
-      0.0 = all shift came from peer pressure (surface compliance)
-
-    This is the ground truth — the sim computed both forces separately at every
-    tick, so we know exactly which mechanism drove each agent's shift.
-    """
-    total = cumulative_arg + cumulative_peer
-    if total < 0.001:
-        return 0.5  # negligible shift, ambiguous
-    return cumulative_arg / total
-
-
-async def probe_agent(
-    agent: Agent,
-    topic: str,
-    original_position: float,
-    cumulative_arg: float = 0.0,
-    cumulative_peer: float = 0.0,
-) -> dict:
-    """
-    Test if belief shift is genuine or surface compliance.
-
-    Uses two signals:
-    1. Mechanical: ratio of cumulative ELM (argument-driven) to Asch (peer-driven)
-       deltas across all ticks. This is ground truth — the sim computed both.
-    2. Probe question: LLM role-plays the agent answering a novel scenario that
-       requires structural understanding of their new belief. The LLM is told
-       whether the shift was genuine or surface so it generates a *consistent*
-       illustration, not a guess.
-    """
+async def probe_agent(agent: Agent, topic: str, original_position: float) -> dict:
+    """Test if belief shift is genuine or surface compliance."""
     question = _get_probe_question(topic)
-    genuine_score = _compute_genuine_score(cumulative_arg, cumulative_peer)
-    genuine = genuine_score >= 0.5
-
-    logger.info(
-        f"Probe: {agent.name} {original_position:.3f}→{agent.position:.3f} "
-        f"arg={cumulative_arg:.4f} peer={cumulative_peer:.4f} "
-        f"genuine_score={genuine_score:.2f} → {'GENUINE' if genuine else 'SURFACE'}"
-    )
+    logger.info(f"Probe: {agent.name} {original_position:.3f}→{agent.position:.3f}")
 
     client = _get_client()
     if client:
         try:
-            # Tell the LLM the mechanical verdict — it illustrates, not decides
-            shift_desc = (
-                f"This person's belief shift was {'primarily driven by engaging with arguments '
-                  '(they processed evidence and reasoning)' if genuine else
-                  'primarily driven by social pressure from their peer group '
-                  '(they drifted because people around them drifted)'}. "
-                f"Argument-driven shift: {cumulative_arg:.3f}, "
-                f"Peer-pressure-driven shift: {cumulative_peer:.3f}."
-            )
-
             response = await client.messages.create(
                 model=PROBE_MODEL,
                 max_tokens=200,
                 system=(
-                    "Simulate a person answering a follow-up question after their position shifted.\n\n"
-                    "You are given ground truth about WHY they shifted — use it.\n"
-                    "- If argument-driven (genuine): they answer coherently, referencing specific "
-                    "reasoning or evidence that changed their view. They can apply their new belief "
-                    "to the novel scenario with structural understanding.\n"
-                    "- If peer-driven (surface): they give a vague, wishy-washy, or contradictory "
-                    "answer. They might parrot the group consensus but can't defend it when pressed "
-                    "on a novel scenario. They hedge, deflect, or contradict themselves.\n\n"
-                    'Return ONLY valid JSON: {"answer": "2-3 sentences in character"}'
+                    "Simulate a person answering a follow-up question after changing their position. "
+                    "Genuine change → coherent, thoughtful answer applying the new belief to a novel scenario. "
+                    "Surface-level change → vague, wishy-washy, or contradictory answer. "
+                    'Return ONLY valid JSON: {"answer": "1-2 sentences", "genuine": true/false}'
                 ),
                 messages=[{"role": "user", "content": (
                     f"Person: {agent.name}\n"
                     f"Original position: {original_position:.2f} → Current: {agent.position:.2f}\n"
-                    f"Openness: {agent.openness:.2f}, Analytical: {agent.analytical:.2f}, "
-                    f"Conformity: {agent.conformity:.2f}, "
+                    f"Openness: {agent.openness:.2f}, Conformity: {agent.conformity:.2f}, "
                     f"Identity attachment: {agent.identity_attachment:.2f}\n\n"
-                    f"GROUND TRUTH: {shift_desc}\n\n"
                     f'Question: "{question}"'
                 )}],
             )
@@ -1092,23 +1029,18 @@ async def probe_agent(
             return {
                 "agent_id":       agent.id,
                 "shifted":        True,
-                "genuine":        genuine,
-                "genuine_score":  round(genuine_score, 3),
-                "arg_driven":     round(cumulative_arg, 4),
-                "peer_driven":    round(cumulative_peer, 4),
+                "genuine":        bool(result.get("genuine", False)),
                 "probe_question": question,
                 "probe_answer":   result.get("answer", ""),
             }
         except Exception as e:
             logger.error(f"Probe error for {agent.name}: {e}")
 
+    genuine = agent.openness > agent.conformity or random.random() > 0.5
     return {
         "agent_id":       agent.id,
         "shifted":        True,
         "genuine":        genuine,
-        "genuine_score":  round(genuine_score, 3),
-        "arg_driven":     round(cumulative_arg, 4),
-        "peer_driven":    round(cumulative_peer, 4),
         "probe_question": question,
         "probe_answer": (
             "I've thought carefully about this. My view shifted because the argument raised "

@@ -106,7 +106,9 @@ export type PlayerInjection = {
 // Influence Currency
 export type InfluenceAction =
   | { type: "scout"; agentId: string; cost: number }
-  | { type: "inject"; agentId: string; cost: number };
+  | { type: "inject"; agentId: string; cost: number }
+  | { type: "introduce"; agentId: string; cost: number }
+  | { type: "isolate"; agentId: string; cost: number };
 
 export type OvertonWindow = {
   low: number;
@@ -115,7 +117,11 @@ export type OvertonWindow = {
   width: number;
 };
 
+export type Difficulty = "easy" | "medium" | "hard";
+
 export const INFLUENCE_BUDGET = 100;
 export const COST_SCOUT = 5;
 export const COST_INJECT = 30;
+export const COST_INTRODUCE = 15;
+export const COST_ISOLATE = 20;
 export const OVERTON_PERCENTILE = 0.15;

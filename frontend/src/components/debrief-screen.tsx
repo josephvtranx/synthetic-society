@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSimStore, useProbeResults, useCurrentAgents, useOvertonWindow, useInitialOvertonWindow } from "@/lib/store";
 import { runProbe, generateHeadline } from "@/lib/api";
-import { BG, CARD, TEXT_PRIMARY, TEXT_MUTED } from "@/lib/colors";
+import { BG, SURF, BORDER, BORDER_MD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, GENUINE, COMPLIANT, ACTION, AGAINST, FONT_UI, FONT_MONO, RAISED } from "@/lib/colors";
 import { INFLUENCE_BUDGET } from "@/lib/types";
 
 export default function DebriefScreen() {
@@ -21,6 +21,8 @@ export default function DebriefScreen() {
   const influenceSpent = useSimStore((s) => s.influenceSpent);
   const overton = useOvertonWindow();
   const initialOverton = useInitialOvertonWindow();
+  const ticks = useSimStore((s) => s.ticks);
+  const events = ticks.filter((t) => t.event).map((t) => t.event!);
 
   // Fetch probe results on mount, then headline
   useEffect(() => {
@@ -29,7 +31,6 @@ export default function DebriefScreen() {
     runProbe(simId)
       .then((res) => {
         setProbeResults(res.probe_results, res.summary);
-        // Now fetch the headline with probe data
         return generateHeadline(simId, res.summary.genuine, res.summary.surface);
       })
       .then((h) => {
@@ -41,13 +42,11 @@ export default function DebriefScreen() {
       .finally(() => setProbing(false));
   }, [simId]);
 
-  const mono = { fontFamily: "'Courier New', monospace" };
-
   if (probing) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: BG }}>
-        <p className="text-xs uppercase tracking-widest" style={{ color: TEXT_MUTED, ...mono }}>
-          probing agents...
+        <p style={{ fontFamily: FONT_UI, fontSize: 12, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.12em" }}>
+          Probing agents...
         </p>
       </div>
     );
@@ -59,113 +58,117 @@ export default function DebriefScreen() {
   const windowShift = overton && initialOverton ? overton.center - initialOverton.center : 0;
   const genuineProbes = probeResults.filter((p) => p.shifted && p.genuine);
   const surfaceProbes = probeResults.filter((p) => p.shifted && !p.genuine);
-  const ticks = useSimStore((s) => s.ticks);
-  const events = ticks.filter((t) => t.event).map((t) => t.event!);
 
   return (
     <div className="flex-1 overflow-y-auto py-10 px-8" style={{ background: BG }}>
-      <div className="max-w-2xl mx-auto space-y-8">
+      <div className="max-w-2xl mx-auto space-y-7">
         {/* Newspaper headline */}
         {headline ? (
-          <div className="text-center space-y-3 pb-2" style={{ borderBottom: `3px double ${TEXT_PRIMARY}` }}>
-            <div className="text-xs uppercase tracking-[0.3em] font-bold" style={{ color: TEXT_MUTED, ...mono }}>
-              the daily synthetic
+          <div className="text-center space-y-2.5 pb-4" style={{ borderBottom: `3px double ${BORDER_MD}` }}>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.3em", fontWeight: 500 }}>
+              The Daily Synthetic
             </div>
-            <h1 className="text-xl font-black uppercase leading-tight tracking-wide" style={{ color: TEXT_PRIMARY, ...mono }}>
+            <h1 style={{ fontFamily: FONT_UI, fontSize: 20, fontWeight: 800, color: TEXT_PRIMARY, lineHeight: 1.3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               {headline.headline}
             </h1>
             {headline.subheadline && (
-              <p className="text-sm leading-relaxed" style={{ color: TEXT_PRIMARY, ...mono }}>
+              <p style={{ fontFamily: FONT_UI, fontSize: 13, color: TEXT_SECONDARY, lineHeight: 1.6 }}>
                 {headline.subheadline}
               </p>
             )}
             {headline.editorial && (
-              <p className="text-xs italic" style={{ color: TEXT_MUTED, ...mono }}>
+              <p style={{ fontFamily: FONT_UI, fontSize: 11, fontStyle: "italic", color: TEXT_MUTED }}>
                 Editorial: {headline.editorial}
               </p>
             )}
           </div>
         ) : (
           <div className="text-center space-y-2">
-            <h1 className="text-2xl font-bold uppercase tracking-widest" style={{ color: TEXT_PRIMARY, ...mono }}>
-              what was real?
+            <h1 style={{ fontFamily: FONT_UI, fontSize: 22, fontWeight: 700, color: TEXT_PRIMARY, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              What Was Real?
             </h1>
-            <p className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
+            <p style={{ fontFamily: FONT_UI, fontSize: 12, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>
               {summary.total_shifted} shifted
             </p>
           </div>
         )}
 
         <div className="text-center">
-          <p className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
+          <p style={{ fontFamily: FONT_UI, fontSize: 11, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>
             {summary.total_shifted} shifted — what was real?
           </p>
         </div>
 
+        {/* Score cards */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { value: summary.total_shifted, label: "shifted" },
-            { value: summary.genuine, label: "genuine" },
-            { value: summary.surface, label: "surface" },
-            { value: `${genuineRate}%`, label: "genuine rate" },
-            { value: `${windowShift >= 0 ? "+" : ""}${windowShift.toFixed(2)}`, label: "window shift" },
-            { value: `${influenceSpent}/${INFLUENCE_BUDGET}`, label: "IP spent" },
+            { value: summary.total_shifted, label: "shifted", color: TEXT_PRIMARY },
+            { value: summary.genuine, label: "genuine", color: GENUINE },
+            { value: summary.surface, label: "surface", color: COMPLIANT },
+            { value: `${genuineRate}%`, label: "genuine rate", color: GENUINE },
+            { value: `${windowShift >= 0 ? "+" : ""}${windowShift.toFixed(2)}`, label: "window shift", color: ACTION },
+            { value: `${influenceSpent}/${INFLUENCE_BUDGET}`, label: "IP spent", color: ACTION },
           ].map((card) => (
-            <div key={card.label} className="p-4 text-center" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
-              <div className="text-2xl font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>{card.value}</div>
-              <div className="text-xs mt-1 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>{card.label}</div>
+            <div key={card.label} className="p-4 text-center" style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 8 }}>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 22, fontWeight: 700, color: card.color }}>{card.value}</div>
+              <div style={{ fontFamily: FONT_UI, fontSize: 10, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 4 }}>{card.label}</div>
             </div>
           ))}
         </div>
 
-        <div className="p-4" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
-          <div className="text-xs mb-3 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>belief shift breakdown</div>
-          <div className="h-5 overflow-hidden flex" style={{ border: `1px solid ${TEXT_PRIMARY}` }}>
+        {/* Belief shift breakdown */}
+        <div className="p-4" style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 8 }}>
+          <div style={{ fontFamily: FONT_UI, fontSize: 10, fontWeight: 600, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+            Belief Shift Breakdown
+          </div>
+          <div className="overflow-hidden flex" style={{ height: 20, borderRadius: 4, background: "rgba(0,0,0,0.06)" }}>
             {genuineRate > 0 && (
-              <div className="flex items-center justify-center text-xs font-bold" style={{ width: `${genuineRate}%`, background: TEXT_PRIMARY, color: CARD, ...mono }}>
+              <div className="flex items-center justify-center" style={{ width: `${genuineRate}%`, background: GENUINE, fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, color: "white" }}>
                 {genuineRate}%
               </div>
             )}
             {surfaceRate > 0 && (
-              <div className="flex items-center justify-center text-xs font-bold" style={{ width: `${surfaceRate}%`, background: "rgba(0,0,0,0.2)", color: TEXT_PRIMARY, ...mono }}>
+              <div className="flex items-center justify-center" style={{ width: `${surfaceRate}%`, background: COMPLIANT, fontFamily: FONT_MONO, fontSize: 10, fontWeight: 700, color: "white" }}>
                 {surfaceRate}%
               </div>
             )}
           </div>
-          <div className="flex gap-4 mt-2 text-xs" style={{ color: TEXT_MUTED, ...mono }}>
-            <span><span style={{ display: "inline-block", width: 8, height: 8, background: TEXT_PRIMARY, marginRight: 4 }} />GENUINE</span>
-            <span><span style={{ display: "inline-block", width: 8, height: 8, background: "rgba(0,0,0,0.2)", marginRight: 4, border: `1px solid ${TEXT_PRIMARY}` }} />SURFACE</span>
+          <div className="flex gap-5 mt-2.5" style={{ fontFamily: FONT_UI, fontSize: 10, color: TEXT_SECONDARY }}>
+            <span className="flex items-center gap-1.5">
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: GENUINE }} />
+              Genuine
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: COMPLIANT }} />
+              Surface
+            </span>
           </div>
         </div>
 
         {/* Overton Window before/after */}
         {initialOverton && overton && (
-          <div className="p-4" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
-            <div className="text-xs mb-3 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>overton window shift</div>
+          <div className="p-4" style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 8 }}>
+            <div style={{ fontFamily: FONT_UI, fontSize: 10, fontWeight: 600, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Overton Window Shift
+            </div>
             {[
-              { label: "BEFORE", window: initialOverton, opacity: 0.3 },
-              { label: "AFTER", window: overton, opacity: 1 },
+              { label: "Before", window: initialOverton, color: TEXT_MUTED, opacity: 0.4 },
+              { label: "After", window: overton, color: ACTION, opacity: 1 },
             ].map((row) => (
-              <div key={row.label} className="flex items-center gap-3 mb-2">
-                <span className="text-xs w-12 uppercase" style={{ color: TEXT_MUTED, ...mono, fontSize: "9px" }}>{row.label}</span>
-                <div className="flex-1 relative h-3">
-                  <div className="absolute top-1/2 left-0 right-0 h-px" style={{ background: "rgba(0,0,0,0.1)" }} />
-                  <div
-                    className="absolute top-0 h-full"
-                    style={{
-                      left: `${((row.window.low + 1) / 2) * 100}%`,
-                      width: `${(row.window.width / 2) * 100}%`,
-                      background: `rgba(0,0,0,${0.08 * row.opacity})`,
-                      border: `1px solid ${TEXT_PRIMARY}`,
-                      opacity: row.opacity,
-                    }}
-                  />
-                  <div
-                    className="absolute top-0 h-full w-px"
-                    style={{ left: `${((row.window.center + 1) / 2) * 100}%`, background: TEXT_PRIMARY, opacity: row.opacity }}
-                  />
+              <div key={row.label} className="flex items-center gap-3 mb-2.5">
+                <span style={{ fontFamily: FONT_MONO, fontSize: 9, fontWeight: 600, color: row.color, width: 44, textTransform: "uppercase" }}>{row.label}</span>
+                <div className="flex-1 relative" style={{ height: 12 }}>
+                  <div className="absolute top-1/2 left-0 right-0" style={{ height: 1, background: BORDER }} />
+                  <div className="absolute top-0 h-full rounded-sm" style={{
+                    left: `${((row.window.low + 1) / 2) * 100}%`,
+                    width: `${(row.window.width / 2) * 100}%`,
+                    background: `rgba(0,0,0,${0.06 * row.opacity})`,
+                    border: `1px solid ${BORDER_MD}`,
+                    opacity: row.opacity,
+                  }} />
+                  <div className="absolute top-0 h-full" style={{ left: `${((row.window.center + 1) / 2) * 100}%`, width: 2, borderRadius: 1, background: row.color, opacity: row.opacity }} />
                 </div>
-                <span className="text-xs w-24 text-right" style={{ color: TEXT_PRIMARY, ...mono, fontSize: "9px" }}>
+                <span style={{ fontFamily: FONT_MONO, fontSize: 9, color: TEXT_SECONDARY, width: 96, textAlign: "right" }}>
                   [{row.window.low.toFixed(2)}, {row.window.high.toFixed(2)}]
                 </span>
               </div>
@@ -175,22 +178,21 @@ export default function DebriefScreen() {
 
         {/* Events timeline */}
         {events.length > 0 && (
-          <div className="p-4" style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
-            <div className="text-xs mb-3 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
-              events ({events.length})
+          <div className="p-4" style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 8 }}>
+            <div style={{ fontFamily: FONT_UI, fontSize: 10, fontWeight: 600, color: TEXT_MUTED, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Events ({events.length})
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {events.map((ev, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="text-xs font-bold shrink-0 w-10 text-right pt-0.5"
-                    style={{ color: TEXT_MUTED, ...mono, fontSize: "9px" }}>
+                  <div style={{ fontFamily: FONT_MONO, fontSize: 9, fontWeight: 700, color: TEXT_MUTED, width: 32, textAlign: "right", paddingTop: 2, flexShrink: 0 }}>
                     T{ev.tick}
                   </div>
                   <div className="flex-1">
-                    <div className="text-xs font-bold leading-relaxed" style={{ color: TEXT_PRIMARY, ...mono }}>
+                    <div style={{ fontFamily: FONT_UI, fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY, lineHeight: 1.5 }}>
                       {ev.headline}
                     </div>
-                    <div className="text-xs mt-0.5" style={{ color: TEXT_MUTED, ...mono, fontSize: "9px" }}>
+                    <div style={{ fontFamily: FONT_UI, fontSize: 10, color: TEXT_MUTED, marginTop: 2 }}>
                       {ev.affected_agents.length} affected — {ev.type.replace("_", " ")}
                     </div>
                   </div>
@@ -200,25 +202,28 @@ export default function DebriefScreen() {
           </div>
         )}
 
+        {/* Genuine shifts */}
         {genuineProbes.length > 0 && (
           <div>
-            <div className="text-xs font-bold mb-3 uppercase tracking-wider" style={{ color: TEXT_PRIMARY, ...mono }}>
-              genuine shifts
+            <div style={{ fontFamily: FONT_UI, fontSize: 10, fontWeight: 600, color: GENUINE, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Genuine Shifts
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {genuineProbes.map((p) => {
                 const agent = agents.find((a) => a.id === p.agent_id);
                 return (
                   <div key={p.agent_id} onClick={() => selectAgent(p.agent_id)}
-                    className="p-4 cursor-pointer transition-colors hover:bg-gray-50"
-                    style={{ border: `2px solid ${TEXT_PRIMARY}` }}>
+                    className="p-4 cursor-pointer transition-all"
+                    style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 8, borderLeft: `3px solid ${GENUINE}` }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = RAISED}
+                    onMouseLeave={(e) => e.currentTarget.style.background = SURF}>
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-2 h-2" style={{ background: TEXT_PRIMARY }} />
-                      <span className="text-sm font-bold uppercase" style={{ color: TEXT_PRIMARY, ...mono }}>{agent?.name}</span>
+                      <div className="rounded-full" style={{ width: 8, height: 8, background: GENUINE }} />
+                      <span style={{ fontFamily: FONT_UI, fontSize: 13, fontWeight: 700, color: TEXT_PRIMARY }}>{agent?.name}</span>
                     </div>
-                    <div className="text-xs space-y-1" style={{ color: TEXT_PRIMARY, ...mono }}>
-                      <div><span style={{ color: TEXT_MUTED }}>Q: </span>{p.probe_question}</div>
-                      <div><span style={{ color: TEXT_MUTED }}>A: </span>{p.probe_answer}</div>
+                    <div className="space-y-1.5" style={{ fontFamily: FONT_UI, fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.5 }}>
+                      <div><span style={{ color: TEXT_MUTED, fontWeight: 600 }}>Q: </span>{p.probe_question}</div>
+                      <div><span style={{ color: TEXT_MUTED, fontWeight: 600 }}>A: </span>{p.probe_answer}</div>
                     </div>
                   </div>
                 );
@@ -227,25 +232,28 @@ export default function DebriefScreen() {
           </div>
         )}
 
+        {/* Surface compliance */}
         {surfaceProbes.length > 0 && (
           <div>
-            <div className="text-xs font-bold mb-3 uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
-              surface compliance
+            <div style={{ fontFamily: FONT_UI, fontSize: 10, fontWeight: 600, color: COMPLIANT, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Surface Compliance
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {surfaceProbes.map((p) => {
                 const agent = agents.find((a) => a.id === p.agent_id);
                 return (
                   <div key={p.agent_id} onClick={() => selectAgent(p.agent_id)}
-                    className="p-4 cursor-pointer transition-colors hover:bg-gray-50"
-                    style={{ border: `1px solid ${TEXT_MUTED}` }}>
+                    className="p-4 cursor-pointer transition-all"
+                    style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 8, borderLeft: `3px solid ${COMPLIANT}` }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = RAISED}
+                    onMouseLeave={(e) => e.currentTarget.style.background = SURF}>
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="w-2 h-2" style={{ background: TEXT_MUTED }} />
-                      <span className="text-sm font-bold uppercase" style={{ color: TEXT_MUTED, ...mono }}>{agent?.name}</span>
+                      <div className="rounded-full" style={{ width: 8, height: 8, background: COMPLIANT }} />
+                      <span style={{ fontFamily: FONT_UI, fontSize: 13, fontWeight: 700, color: TEXT_PRIMARY }}>{agent?.name}</span>
                     </div>
-                    <div className="text-xs space-y-1" style={{ color: TEXT_PRIMARY, ...mono }}>
-                      <div><span style={{ color: TEXT_MUTED }}>Q: </span>{p.probe_question}</div>
-                      <div><span style={{ color: TEXT_MUTED }}>A: </span>{p.probe_answer}</div>
+                    <div className="space-y-1.5" style={{ fontFamily: FONT_UI, fontSize: 11, color: TEXT_SECONDARY, lineHeight: 1.5 }}>
+                      <div><span style={{ color: TEXT_MUTED, fontWeight: 600 }}>Q: </span>{p.probe_question}</div>
+                      <div><span style={{ color: TEXT_MUTED, fontWeight: 600 }}>A: </span>{p.probe_answer}</div>
                     </div>
                   </div>
                 );
@@ -254,16 +262,17 @@ export default function DebriefScreen() {
           </div>
         )}
 
+        {/* Action buttons */}
         <div className="flex justify-center gap-3 pb-8">
           <button onClick={() => setScreen("playback")}
-            className="px-5 py-2.5 text-xs uppercase tracking-widest transition-colors"
-            style={{ border: `2px solid ${TEXT_PRIMARY}`, color: TEXT_PRIMARY, background: CARD, ...mono }}>
-            replay
+            className="px-5 py-2.5 transition-all"
+            style={{ border: `1px solid ${BORDER_MD}`, borderRadius: 6, fontFamily: FONT_UI, fontSize: 12, fontWeight: 500, color: TEXT_SECONDARY, background: RAISED }}>
+            Replay
           </button>
           <button onClick={reset}
-            className="px-5 py-2.5 text-xs font-bold uppercase tracking-widest transition-colors"
-            style={{ background: TEXT_PRIMARY, color: CARD, ...mono }}>
-            new simulation
+            className="px-5 py-2.5 transition-all"
+            style={{ background: ACTION, border: "none", borderRadius: 6, fontFamily: FONT_UI, fontSize: 12, fontWeight: 600, color: "white" }}>
+            New Simulation
           </button>
         </div>
       </div>

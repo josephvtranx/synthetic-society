@@ -64,9 +64,6 @@ class SimSession:
     tick: int = 0
     history: list = field(default_factory=list)       # list of tick snapshots
     original_positions: dict = field(default_factory=dict)
-    # Per-agent cumulative ELM vs Asch contributions — used by probe to
-    # mechanically determine genuine (argument-driven) vs surface (peer-driven)
-    shift_ledger: dict = field(default_factory=dict)  # {agent_id: {"arg": float, "peer": float}}
 
 
 _sessions: dict[str, SimSession] = {}
@@ -150,10 +147,11 @@ async def populate(body: dict):
     society_type = body.get("society_type", "polarized")
     n_agents = max(5, min(50, body.get("n_agents", 25)))
     topic = body.get("topic", "")
-    logger.info(f"POST /populate: type={society_type} n={n_agents} topic='{topic[:60]}'")
+    difficulty = body.get("difficulty", "medium")
+    logger.info(f"POST /populate: type={society_type} n={n_agents} difficulty={difficulty} topic='{topic[:60]}'")
 
-    agents = generate_population(n_agents, topic or "preview", society_type)
-    graph = create_society_graph(agents, society_type)
+    agents = generate_population(n_agents, topic or "preview", society_type, difficulty)
+    graph = create_society_graph(agents)
     stances = await generate_all_stances(agents, topic) if topic else {}
 
     _cached_agents = agents
@@ -172,6 +170,7 @@ class CreateSimRequest(BaseModel):
     society_type: str = "polarized"
     n_agents: int = 25
     use_cached: bool = True
+    difficulty: str = "medium"
 
 
 @app.post("/sim/create")
@@ -189,10 +188,10 @@ async def create_sim(req: CreateSimRequest):
         stances = _cached_stances or await generate_all_stances(agents, req.topic)
         logger.info(f"POST /sim/create: reusing cached population ({len(agents)} agents)")
     else:
-        agents = generate_population(n, req.topic, req.society_type)
-        graph = create_society_graph(agents, req.society_type)
+        agents = generate_population(n, req.topic, req.society_type, req.difficulty)
+        graph = create_society_graph(agents)
         stances = await generate_all_stances(agents, req.topic)
-        logger.info(f"POST /sim/create: fresh population ({len(agents)} agents)")
+        logger.info(f"POST /sim/create: fresh population ({len(agents)} agents) difficulty={req.difficulty}")
 
     sim_id = str(uuid.uuid4())[:8]
     session = SimSession(
@@ -256,13 +255,6 @@ async def inject(sim_id: str, req: InjectRequest):
     if "error" in result:
         raise HTTPException(400, result["error"])
 
-    # Accumulate ELM vs Asch deltas for probe
-    aid = req.agent_id
-    if aid not in session.shift_ledger:
-        session.shift_ledger[aid] = {"arg": 0.0, "peer": 0.0}
-    session.shift_ledger[aid]["arg"]  += abs(result.get("delta_arg", 0.0))
-    session.shift_ledger[aid]["peer"] += abs(result.get("delta_peer", 0.0))
-
     logger.info(
         f"POST /sim/{sim_id}/inject → {req.agent_id}: "
         f"delta={result.get('actual_delta', 0):+.4f}"
@@ -293,14 +285,6 @@ async def advance_tick(sim_id: str):
     )
     session.history.append(snapshot)
 
-    # Accumulate ELM vs Asch deltas for probe
-    for shift in snapshot.get("shifts", []):
-        aid = shift["agent_id"]
-        if aid not in session.shift_ledger:
-            session.shift_ledger[aid] = {"arg": 0.0, "peer": 0.0}
-        session.shift_ledger[aid]["arg"]  += abs(shift.get("delta_arg", 0.0))
-        session.shift_ledger[aid]["peer"] += abs(shift.get("delta_peer", 0.0))
-
     logger.info(
         f"POST /sim/{sim_id}/next_tick: tick={session.tick} "
         f"pairs={snapshot['n_pairs']} shifts={len(snapshot['shifts'])}"
@@ -323,6 +307,82 @@ async def get_state(sim_id: str):
         "agents":   [_serialize_agent(a, session.stances) for a in session.agents.values()],
         "edges":    _make_edges(session.graph),
         "history":  session.history,
+    }
+
+
+# ── /sim/{id}/introduce ──────────────────────────────────────────────────────
+class IntroduceRequest(BaseModel):
+    agent_a_id: str
+    agent_b_id: str
+
+
+@app.post("/sim/{sim_id}/introduce")
+async def introduce_agents(sim_id: str, req: IntroduceRequest):
+    """
+    Create a new trust edge between two unconnected agents.
+    Costs IP on the frontend. Returns the updated edge list.
+    """
+    session = _sessions.get(sim_id)
+    if not session:
+        raise HTTPException(404, f"Session '{sim_id}' not found")
+
+    a_id, b_id = req.agent_a_id, req.agent_b_id
+    if a_id not in session.agents or b_id not in session.agents:
+        raise HTTPException(400, "One or both agent IDs not found")
+    if session.graph.has_edge(a_id, b_id):
+        raise HTTPException(400, "These agents are already connected")
+
+    # New edge with moderate starting trust based on opinion similarity
+    a = session.agents[a_id]
+    b = session.agents[b_id]
+    opinion_sim = 1.0 - abs(a.position - b.position) / 2.0
+    init_trust = round(min(0.40, 0.15 + opinion_sim * 0.10), 3)
+    session.graph.add_edge(a_id, b_id, weight=init_trust)
+
+    logger.info(
+        f"POST /sim/{sim_id}/introduce: {a.name} <-> {b.name} trust={init_trust}"
+    )
+
+    return {
+        "agent_a_id": a_id,
+        "agent_b_id": b_id,
+        "trust": init_trust,
+        "edges": _make_edges(session.graph),
+    }
+
+
+# ── /sim/{id}/isolate ───────────────────────────────────────────────────────
+class IsolateRequest(BaseModel):
+    agent_id: str
+
+
+@app.post("/sim/{sim_id}/isolate")
+async def isolate_agent(sim_id: str, req: IsolateRequest):
+    """
+    Remove all edges from an agent, cutting them off from the network.
+    They can still receive direct injections but won't participate in
+    conversations or exert/receive peer pressure.
+    """
+    session = _sessions.get(sim_id)
+    if not session:
+        raise HTTPException(404, f"Session '{sim_id}' not found")
+
+    agent_id = req.agent_id
+    if agent_id not in session.agents:
+        raise HTTPException(400, f"Agent {agent_id} not found")
+
+    edges_removed = list(session.graph.edges(agent_id))
+    session.graph.remove_edges_from(edges_removed)
+
+    agent = session.agents[agent_id]
+    logger.info(
+        f"POST /sim/{sim_id}/isolate: {agent.name} — removed {len(edges_removed)} edges"
+    )
+
+    return {
+        "agent_id": agent_id,
+        "edges_removed": len(edges_removed),
+        "edges": _make_edges(session.graph),
     }
 
 
@@ -349,12 +409,7 @@ async def run_probe(sim_id: str, body: dict = {}):
     for i in range(0, len(shifted), 5):
         batch = shifted[i:i + 5]
         results = await asyncio.gather(*[
-            probe_agent(
-                a, session.topic,
-                session.original_positions.get(a.id, a.position),
-                cumulative_arg=session.shift_ledger.get(a.id, {}).get("arg", 0.0),
-                cumulative_peer=session.shift_ledger.get(a.id, {}).get("peer", 0.0),
-            )
+            probe_agent(a, session.topic, session.original_positions.get(a.id, a.position))
             for a in batch
         ])
         probe_results.extend(results)
@@ -536,25 +591,11 @@ async def simulate(req: SimulateRequest):
         a for a in agents.values()
         if abs(a.position - original_positions.get(a.id, a.position)) > threshold
     ]
-    # Build shift ledger for the batch run
-    batch_ledger: dict = {}
-    for tick_data in ticks:
-        for shift in tick_data.get("shifts", []):
-            aid = shift["agent_id"]
-            if aid not in batch_ledger:
-                batch_ledger[aid] = {"arg": 0.0, "peer": 0.0}
-            batch_ledger[aid]["arg"]  += abs(shift.get("delta_arg", 0.0))
-            batch_ledger[aid]["peer"] += abs(shift.get("delta_peer", 0.0))
-
     probe_results = []
     for i in range(0, len(shifted), 5):
         batch = shifted[i:i + 5]
         results = await asyncio.gather(*[
-            probe_agent(
-                a, topic, original_positions.get(a.id, a.position),
-                cumulative_arg=batch_ledger.get(a.id, {}).get("arg", 0.0),
-                cumulative_peer=batch_ledger.get(a.id, {}).get("peer", 0.0),
-            )
+            probe_agent(a, topic, original_positions.get(a.id, a.position))
             for a in batch
         ])
         probe_results.extend(results)

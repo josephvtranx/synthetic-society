@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, InfluenceAction, OvertonWindow, Headline } from "./types";
-import { INFLUENCE_BUDGET, COST_SCOUT, COST_INJECT, OVERTON_PERCENTILE } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, ProbeResult, Conversation, InjectResult, InfluenceAction, OvertonWindow, Headline, Difficulty } from "./types";
+import { INFLUENCE_BUDGET, COST_SCOUT, COST_INJECT, COST_INTRODUCE, COST_ISOLATE, OVERTON_PERCENTILE } from "./types";
 
 type Screen = "setup" | "playback" | "debrief";
 
@@ -37,6 +37,7 @@ type SimStore = {
   influenceSpent: number;
   influenceActions: InfluenceAction[];
   scoutedAgentIds: string[];
+  difficulty: Difficulty;
 
   // Actions
   setScreen: (screen: Screen) => void;
@@ -54,6 +55,10 @@ type SimStore = {
   setPrompt: (prompt: string) => void;
   scoutAgent: (id: string) => void;
   spendInject: (targetIds: string[]) => void;
+  spendIntroduce: (agentAId: string, agentBId: string) => void;
+  spendIsolate: (agentId: string) => void;
+  setDifficulty: (difficulty: Difficulty) => void;
+  setEdges: (edges: EdgeData[]) => void;
   reset: () => void;
 };
 
@@ -77,6 +82,7 @@ export const useSimStore = create<SimStore>((set) => ({
   influenceSpent: 0,
   influenceActions: [],
   scoutedAgentIds: [],
+  difficulty: "medium" as Difficulty,
 
   setScreen: (screen) => set({ screen }),
   setLoading: (loading) => set({ loading }),
@@ -184,6 +190,30 @@ export const useSimStore = create<SimStore>((set) => ({
         ],
       };
     }),
+  spendIntroduce: (agentAId, agentBId) =>
+    set((state) => {
+      if (state.influenceSpent + COST_INTRODUCE > INFLUENCE_BUDGET) return state;
+      return {
+        influenceSpent: state.influenceSpent + COST_INTRODUCE,
+        influenceActions: [
+          ...state.influenceActions,
+          { type: "introduce" as const, agentId: `${agentAId}:${agentBId}`, cost: COST_INTRODUCE },
+        ],
+      };
+    }),
+  spendIsolate: (agentId) =>
+    set((state) => {
+      if (state.influenceSpent + COST_ISOLATE > INFLUENCE_BUDGET) return state;
+      return {
+        influenceSpent: state.influenceSpent + COST_ISOLATE,
+        influenceActions: [
+          ...state.influenceActions,
+          { type: "isolate" as const, agentId, cost: COST_ISOLATE },
+        ],
+      };
+    }),
+  setDifficulty: (difficulty) => set({ difficulty }),
+  setEdges: (edges) => set({ edges }),
   reset: () =>
     set({
       screen: "setup",
@@ -204,6 +234,7 @@ export const useSimStore = create<SimStore>((set) => ({
       influenceSpent: 0,
       influenceActions: [],
       scoutedAgentIds: [],
+      difficulty: "medium" as Difficulty,
     }),
 }));
 

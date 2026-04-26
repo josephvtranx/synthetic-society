@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useSimStore, useTotalTicks } from "@/lib/store";
 import { nextTick } from "@/lib/api";
-import { BG, TEXT_PRIMARY, TEXT_MUTED, CARD } from "@/lib/colors";
+import { BG, SURF, BORDER, BORDER_MD, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, ACTION, FONT_UI, FONT_MONO } from "@/lib/colors";
 
 export default function PlaybackControls() {
   const currentTick = useSimStore((s) => s.currentTick);
@@ -19,7 +19,6 @@ export default function PlaybackControls() {
 
   const fetchingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
-  const mono = { fontFamily: "'Courier New', monospace" };
 
   useEffect(() => {
     if (!playing) { clearInterval(intervalRef.current); return; }
@@ -28,13 +27,11 @@ export default function PlaybackControls() {
       const state = useSimStore.getState();
       const nextIdx = state.currentTick + 1;
 
-      // If we already have this tick loaded (rewound), scrub forward
       if (nextIdx < state.ticks.length) {
         useSimStore.setState({ currentTick: nextIdx });
         return;
       }
 
-      // Fetch a new tick from the backend
       if (fetchingRef.current || !state.simId) return;
       fetchingRef.current = true;
 
@@ -51,51 +48,57 @@ export default function PlaybackControls() {
   }, [playing, speed]);
 
   return (
-    <div className="px-5 py-3 flex items-center gap-4" style={{ background: BG, borderTop: `2px solid ${TEXT_PRIMARY}` }}>
+    <div className="px-5 flex items-center gap-4" style={{ height: 52, background: SURF, borderTop: `1px solid ${BORDER}` }}>
+      {/* Play/Pause button */}
       <button
         onClick={() => setPlaying(!playing)}
-        className="w-8 h-8 flex items-center justify-center transition-colors"
-        style={{ border: `2px solid ${TEXT_PRIMARY}`, background: CARD }}
+        className="flex items-center justify-center transition-all"
+        style={{ width: 32, height: 32, borderRadius: "50%", background: ACTION, border: "none" }}
       >
         {playing ? (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <rect x="1.5" y="1" width="2.5" height="8" fill={TEXT_PRIMARY} />
-            <rect x="6" y="1" width="2.5" height="8" fill={TEXT_PRIMARY} />
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="2" y="1.5" width="3" height="9" rx="0.5" fill="white" />
+            <rect x="7" y="1.5" width="3" height="9" rx="0.5" fill="white" />
           </svg>
         ) : (
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M2.5 1L8.5 5L2.5 9V1Z" fill={TEXT_PRIMARY} />
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M3.5 1.5L10 6L3.5 10.5V1.5Z" fill="white" />
           </svg>
         )}
       </button>
 
+      {/* Rewind */}
       <button onClick={() => { setCurrentTick(0); setPlaying(false); }}
-        className="text-xs uppercase tracking-wider" style={{ color: TEXT_MUTED, ...mono }}>
-        rewind
+        style={{ fontFamily: FONT_UI, fontSize: 11, color: TEXT_MUTED, background: "none", border: "none" }}>
+        Rewind
       </button>
 
+      {/* Scrubber */}
       <div className="flex-1 flex items-center gap-3">
         <input
           type="range" min={0} max={totalTicks} value={currentTick}
           onChange={(e) => { setCurrentTick(parseInt(e.target.value)); setPlaying(false); }}
           className="flex-1 h-1 appearance-none cursor-pointer"
-          style={{ background: "rgba(0,0,0,0.12)", accentColor: TEXT_PRIMARY }}
+          style={{ background: "rgba(0,0,0,0.08)", accentColor: ACTION }}
         />
-        <span className="text-xs tabular-nums w-14 text-right font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>
-          tick {currentTick}
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: TEXT_PRIMARY, width: 56, textAlign: "right" }}>
+          {currentTick} / {totalTicks}
         </span>
       </div>
 
+      {/* Speed buttons */}
       <div className="flex items-center gap-0.5">
         {([0.5, 1, 2] as const).map((s) => (
           <button
             key={s} onClick={() => setSpeed(s)}
-            className="px-2 py-1 text-xs transition-colors"
+            className="transition-all"
             style={{
-              background: speed === s ? TEXT_PRIMARY : "transparent",
-              color: speed === s ? CARD : TEXT_MUTED,
-              fontWeight: speed === s ? 700 : 400,
-              ...mono,
+              padding: "4px 10px",
+              borderRadius: 5,
+              border: speed === s ? "none" : `1px solid ${BORDER}`,
+              background: speed === s ? ACTION : "transparent",
+              color: speed === s ? "white" : TEXT_MUTED,
+              fontFamily: FONT_MONO, fontSize: 11, fontWeight: speed === s ? 700 : 400,
             }}
           >
             {s}x
@@ -103,9 +106,11 @@ export default function PlaybackControls() {
         ))}
       </div>
 
+      {/* End & Probe */}
       <button onClick={() => { setPlaying(false); setScreen("debrief"); }}
-        className="text-xs uppercase tracking-widest font-bold" style={{ color: TEXT_PRIMARY, ...mono }}>
-        end &amp; probe
+        className="transition-all"
+        style={{ fontFamily: FONT_UI, fontSize: 11, fontWeight: 600, color: TEXT_SECONDARY, border: `1px solid ${BORDER_MD}`, borderRadius: 6, padding: "5px 14px", background: "transparent" }}>
+        End &amp; Probe
       </button>
     </div>
   );

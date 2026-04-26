@@ -1,4 +1,4 @@
-import type { AgentData, EdgeData, TickSnapshot, InjectResult, ProbeResult, Headline } from "./types";
+import type { AgentData, EdgeData, TickSnapshot, InjectResult, ProbeResult, Headline, Difficulty } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -43,11 +43,12 @@ export async function populateSociety(
   societyType: string = "polarized",
   nAgents: number = 25,
   topic: string = "",
+  difficulty: Difficulty = "medium",
 ): Promise<PopulateResponse> {
   const res = await fetch(`${API_URL}/populate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ society_type: societyType, n_agents: nAgents, topic }),
+    body: JSON.stringify({ society_type: societyType, n_agents: nAgents, topic, difficulty }),
   });
 
   if (!res.ok) {
@@ -62,6 +63,7 @@ export async function createSim(
   societyType: string = "polarized",
   nAgents: number = 25,
   useCached: boolean = true,
+  difficulty: Difficulty = "medium",
 ): Promise<CreateSimResponse> {
   const res = await fetch(`${API_URL}/sim/create`, {
     method: "POST",
@@ -71,6 +73,7 @@ export async function createSim(
       society_type: societyType,
       n_agents: nAgents,
       use_cached: useCached,
+      difficulty,
     }),
   });
 
@@ -94,6 +97,54 @@ export async function injectArgument(
 
   if (!res.ok) {
     throw new Error(`Inject failed: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export type IntroduceResponse = {
+  agent_a_id: string;
+  agent_b_id: string;
+  trust: number;
+  edges: EdgeData[];
+};
+
+export type IsolateResponse = {
+  agent_id: string;
+  edges_removed: number;
+  edges: EdgeData[];
+};
+
+export async function introduceAgents(
+  simId: string,
+  agentAId: string,
+  agentBId: string,
+): Promise<IntroduceResponse> {
+  const res = await fetch(`${API_URL}/sim/${simId}/introduce`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_a_id: agentAId, agent_b_id: agentBId }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Introduce failed: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function isolateAgent(
+  simId: string,
+  agentId: string,
+): Promise<IsolateResponse> {
+  const res = await fetch(`${API_URL}/sim/${simId}/isolate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_id: agentId }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Isolate failed: ${res.statusText}`);
   }
 
   return res.json();
