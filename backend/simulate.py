@@ -239,6 +239,7 @@ MIN_TRUST = 0.05          # edge removed when trust falls below this
 NEW_EDGE_TRUST = 0.10     # starting trust for triadic-closure-formed edges
 TRUST_DECAY = 0.998       # multiplicative decay per tick on all edges
 TRIADIC_SCALE = 0.15      # scales probability of a new edge forming per tick
+MULTIPLIER = 15           # Multiply all opinion deltas by this to make opinion changes more pronounced
 
 
 # ── JSON extraction ───────────────────────────────────────────────────────────
@@ -434,7 +435,7 @@ def _compute_elm_delta(
     cb_damp = 1.0 - (cb * alignment * 0.6)
 
     # Trust scales the whole delta (v2 additions, Step 6)
-    return (elab * d_central + (1.0 - elab) * d_periph) * type_mult * cb_damp * trust
+    return (elab * d_central + (1.0 - elab) * d_periph) * type_mult * cb_damp * trust * MULTIPLIER
 
 
 # ── Asch peer pressure formula ────────────────────────────────────────────────
@@ -486,7 +487,7 @@ def _compute_asch_delta(agent: Agent, graph, agents: dict) -> float:
 
     p_update = min(0.32 * opp_ratio * u_mult * suscept, 0.80)
     if random.random() < p_update:
-        return (neighbor_mean - agent.position) * 0.08
+        return (neighbor_mean - agent.position) * 0.08 * MULTIPLIER
     return 0.0
 
 
