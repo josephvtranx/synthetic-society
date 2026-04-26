@@ -519,14 +519,14 @@ def _apply_resistance(agent: Agent, raw_delta: float) -> float:
     We use 12% base rate for high-identity agents with large incoming deltas.
     """
     id_resist = agent.identity_attachment * 0.70 + agent.confidence * 0.30
-    total = raw_delta * (1.0 - id_resist * 0.80)
 
-    # Backfire: Wood & Porter (2019) — rare, ~12% of high-identity cases
-    if abs(raw_delta) > 0.05:
-        backfire_prob = agent.identity_attachment * 0.12 * (abs(raw_delta) > 0.10)
+    # Backfire: Wood & Porter (2019) — rare, ~12% of high-identity cases.
+    if abs(raw_delta) > 0.10:
+        backfire_prob = agent.identity_attachment * 0.12
         if random.random() < backfire_prob:
-            total = -abs(total) * 0.30
+            raw_delta *= -0.30
 
+    total = raw_delta * (1.0 - id_resist * 0.80)
     return total
 
 
@@ -617,7 +617,7 @@ def _evolve_trust(graph, agents: dict) -> dict:
             triadic_boost = max(
                 graph[a_id][c].get("weight", 0) * graph[b_id][c].get("weight", 0)
                 for c in common
-            ) * 0.20
+            ) * 0.10 * MULTIPLIER  # scale up to make it more impactful
 
             # Probability this tick proportional to boost
             p_form = triadic_boost * TRIADIC_SCALE
