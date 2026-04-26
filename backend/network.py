@@ -70,17 +70,29 @@ def create_society_graph(agents: dict[str, Agent]) -> nx.Graph:
     # Ensure graph is connected: add one bridge edge between disconnected components
     _ensure_connected(graph)
 
-    # Set trust weights: higher within-cluster, lower between
+    # Initial trust from opinion similarity + cluster membership (McPherson et al. 2001)
     for u, v in graph.edges():
         u_cluster = graph.nodes[u].get("cluster", -1)
         v_cluster = graph.nodes[v].get("cluster", -1)
-        if u_cluster == v_cluster:
-            weight = round(random.uniform(0.5, 0.9), 2)
-        else:
-            weight = round(random.uniform(0.15, 0.45), 2)
-        graph[u][v]["weight"] = weight
+        graph[u][v]["weight"] = _compute_initial_trust(agents[u], agents[v], u_cluster == v_cluster)
 
     return graph
+
+
+def _compute_initial_trust(agent_a: Agent, agent_b: Agent, same_cluster: bool) -> float:
+    """
+    Initial trust based on opinion similarity + cluster membership + baseline.
+    Simplified from v2 trust graph formula (no triadic closure at init).
+      opinion_sim weight: 0.35 (strongest predictor)
+      demo_sim weight:    0.25 (cluster as demographic proxy)
+      ingroup bonus:      +0.10 / outgroup penalty: −0.05
+      baseline:           +0.10 (everyone starts with some good faith)
+    """
+    opinion_sim = 1.0 - abs(agent_a.position - agent_b.position) / 2.0
+    demo_sim = 1.0 if same_cluster else 0.3
+    ingroup = 0.10 if same_cluster else -0.05
+    trust = 0.35 * opinion_sim + 0.25 * demo_sim + ingroup + 0.10
+    return round(max(0.05, min(0.95, trust)), 3)
 
 
 def _ensure_connected(graph):
