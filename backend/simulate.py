@@ -958,10 +958,12 @@ async def next_tick(
 
             if abs(actual_b) > 0.001:
                 shifts.append({"agent_id": b_id,  "delta": round(actual_b, 4),
-                                "new_position": round(agent_b.position, 4), "source": "argument"})
+                                "new_position": round(agent_b.position, 4), "source": "argument",
+                                "delta_arg": round(delta_arg_b, 4), "delta_peer": round(delta_peer_b, 4)})
             if abs(actual_a) > 0.001:
                 shifts.append({"agent_id": a_id,  "delta": round(actual_a, 4),
-                                "new_position": round(agent_a.position, 4), "source": "argument"})
+                                "new_position": round(agent_a.position, 4), "source": "argument",
+                                "delta_arg": round(delta_arg_a, 4), "delta_peer": round(delta_peer_a, 4)})
 
     # Breaking event (random, ~30% chance per tick)
     event = await _generate_event(topic, tick)
@@ -1004,28 +1006,85 @@ async def next_tick(
 
 
 # ── Probe ─────────────────────────────────────────────────────────────────────
-async def probe_agent(agent: Agent, topic: str, original_position: float) -> dict:
-    """Test if belief shift is genuine or surface compliance."""
+def _compute_genuine_score(cumulative_arg: float, cumulative_peer: float) -> float:
+    """
+    Mechanical genuine score from accumulated ELM (argument) vs Asch (peer) deltas.
+
+    Returns 0-1 where:
+      1.0 = all shift came from engaging with arguments (genuine)
+      0.0 = all shift came from peer pressure (surface compliance)
+
+    This is the ground truth — the sim computed both forces separately at every
+    tick, so we know exactly which mechanism drove each agent's shift.
+    """
+    total = cumulative_arg + cumulative_peer
+    if total < 0.001:
+        return 0.5  # negligible shift, ambiguous
+    return cumulative_arg / total
+
+
+async def probe_agent(
+    agent: Agent,
+    topic: str,
+    original_position: float,
+    cumulative_arg: float = 0.0,
+    cumulative_peer: float = 0.0,
+) -> dict:
+    """
+    Test if belief shift is genuine or surface compliance.
+
+    Uses two signals:
+    1. Mechanical: ratio of cumulative ELM (argument-driven) to Asch (peer-driven)
+       deltas across all ticks. This is ground truth — the sim computed both.
+    2. Probe question: LLM role-plays the agent answering a novel scenario that
+       requires structural understanding of their new belief. The LLM is told
+       whether the shift was genuine or surface so it generates a *consistent*
+       illustration, not a guess.
+    """
     question = _get_probe_question(topic)
-    logger.info(f"Probe: {agent.name} {original_position:.3f}→{agent.position:.3f}")
+    genuine_score = _compute_genuine_score(cumulative_arg, cumulative_peer)
+    genuine = genuine_score >= 0.5
+
+    logger.info(
+        f"Probe: {agent.name} {original_position:.3f}→{agent.position:.3f} "
+        f"arg={cumulative_arg:.4f} peer={cumulative_peer:.4f} "
+        f"genuine_score={genuine_score:.2f} → {'GENUINE' if genuine else 'SURFACE'}"
+    )
 
     client = _get_client()
     if client:
         try:
+            # Tell the LLM the mechanical verdict — it illustrates, not decides
+            shift_desc = (
+                f"This person's belief shift was {'primarily driven by engaging with arguments '
+                  '(they processed evidence and reasoning)' if genuine else
+                  'primarily driven by social pressure from their peer group '
+                  '(they drifted because people around them drifted)'}. "
+                f"Argument-driven shift: {cumulative_arg:.3f}, "
+                f"Peer-pressure-driven shift: {cumulative_peer:.3f}."
+            )
+
             response = await client.messages.create(
                 model=PROBE_MODEL,
                 max_tokens=200,
                 system=(
-                    "Simulate a person answering a follow-up question after changing their position. "
-                    "Genuine change → coherent, thoughtful answer applying the new belief to a novel scenario. "
-                    "Surface-level change → vague, wishy-washy, or contradictory answer. "
-                    'Return ONLY valid JSON: {"answer": "1-2 sentences", "genuine": true/false}'
+                    "Simulate a person answering a follow-up question after their position shifted.\n\n"
+                    "You are given ground truth about WHY they shifted — use it.\n"
+                    "- If argument-driven (genuine): they answer coherently, referencing specific "
+                    "reasoning or evidence that changed their view. They can apply their new belief "
+                    "to the novel scenario with structural understanding.\n"
+                    "- If peer-driven (surface): they give a vague, wishy-washy, or contradictory "
+                    "answer. They might parrot the group consensus but can't defend it when pressed "
+                    "on a novel scenario. They hedge, deflect, or contradict themselves.\n\n"
+                    'Return ONLY valid JSON: {"answer": "2-3 sentences in character"}'
                 ),
                 messages=[{"role": "user", "content": (
                     f"Person: {agent.name}\n"
                     f"Original position: {original_position:.2f} → Current: {agent.position:.2f}\n"
-                    f"Openness: {agent.openness:.2f}, Conformity: {agent.conformity:.2f}, "
+                    f"Openness: {agent.openness:.2f}, Analytical: {agent.analytical:.2f}, "
+                    f"Conformity: {agent.conformity:.2f}, "
                     f"Identity attachment: {agent.identity_attachment:.2f}\n\n"
+                    f"GROUND TRUTH: {shift_desc}\n\n"
                     f'Question: "{question}"'
                 )}],
             )
@@ -1033,18 +1092,23 @@ async def probe_agent(agent: Agent, topic: str, original_position: float) -> dic
             return {
                 "agent_id":       agent.id,
                 "shifted":        True,
-                "genuine":        bool(result.get("genuine", False)),
+                "genuine":        genuine,
+                "genuine_score":  round(genuine_score, 3),
+                "arg_driven":     round(cumulative_arg, 4),
+                "peer_driven":    round(cumulative_peer, 4),
                 "probe_question": question,
                 "probe_answer":   result.get("answer", ""),
             }
         except Exception as e:
             logger.error(f"Probe error for {agent.name}: {e}")
 
-    genuine = agent.openness > agent.conformity or random.random() > 0.5
     return {
         "agent_id":       agent.id,
         "shifted":        True,
         "genuine":        genuine,
+        "genuine_score":  round(genuine_score, 3),
+        "arg_driven":     round(cumulative_arg, 4),
+        "peer_driven":    round(cumulative_peer, 4),
         "probe_question": question,
         "probe_answer": (
             "I've thought carefully about this. My view shifted because the argument raised "

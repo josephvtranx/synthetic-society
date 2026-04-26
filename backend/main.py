@@ -64,6 +64,9 @@ class SimSession:
     tick: int = 0
     history: list = field(default_factory=list)       # list of tick snapshots
     original_positions: dict = field(default_factory=dict)
+    # Per-agent cumulative ELM vs Asch contributions — used by probe to
+    # mechanically determine genuine (argument-driven) vs surface (peer-driven)
+    shift_ledger: dict = field(default_factory=dict)  # {agent_id: {"arg": float, "peer": float}}
 
 
 _sessions: dict[str, SimSession] = {}
@@ -253,6 +256,13 @@ async def inject(sim_id: str, req: InjectRequest):
     if "error" in result:
         raise HTTPException(400, result["error"])
 
+    # Accumulate ELM vs Asch deltas for probe
+    aid = req.agent_id
+    if aid not in session.shift_ledger:
+        session.shift_ledger[aid] = {"arg": 0.0, "peer": 0.0}
+    session.shift_ledger[aid]["arg"]  += abs(result.get("delta_arg", 0.0))
+    session.shift_ledger[aid]["peer"] += abs(result.get("delta_peer", 0.0))
+
     logger.info(
         f"POST /sim/{sim_id}/inject → {req.agent_id}: "
         f"delta={result.get('actual_delta', 0):+.4f}"
@@ -282,6 +292,14 @@ async def advance_tick(sim_id: str):
         session.tick,
     )
     session.history.append(snapshot)
+
+    # Accumulate ELM vs Asch deltas for probe
+    for shift in snapshot.get("shifts", []):
+        aid = shift["agent_id"]
+        if aid not in session.shift_ledger:
+            session.shift_ledger[aid] = {"arg": 0.0, "peer": 0.0}
+        session.shift_ledger[aid]["arg"]  += abs(shift.get("delta_arg", 0.0))
+        session.shift_ledger[aid]["peer"] += abs(shift.get("delta_peer", 0.0))
 
     logger.info(
         f"POST /sim/{sim_id}/next_tick: tick={session.tick} "
@@ -331,7 +349,12 @@ async def run_probe(sim_id: str, body: dict = {}):
     for i in range(0, len(shifted), 5):
         batch = shifted[i:i + 5]
         results = await asyncio.gather(*[
-            probe_agent(a, session.topic, session.original_positions.get(a.id, a.position))
+            probe_agent(
+                a, session.topic,
+                session.original_positions.get(a.id, a.position),
+                cumulative_arg=session.shift_ledger.get(a.id, {}).get("arg", 0.0),
+                cumulative_peer=session.shift_ledger.get(a.id, {}).get("peer", 0.0),
+            )
             for a in batch
         ])
         probe_results.extend(results)
@@ -513,11 +536,25 @@ async def simulate(req: SimulateRequest):
         a for a in agents.values()
         if abs(a.position - original_positions.get(a.id, a.position)) > threshold
     ]
+    # Build shift ledger for the batch run
+    batch_ledger: dict = {}
+    for tick_data in ticks:
+        for shift in tick_data.get("shifts", []):
+            aid = shift["agent_id"]
+            if aid not in batch_ledger:
+                batch_ledger[aid] = {"arg": 0.0, "peer": 0.0}
+            batch_ledger[aid]["arg"]  += abs(shift.get("delta_arg", 0.0))
+            batch_ledger[aid]["peer"] += abs(shift.get("delta_peer", 0.0))
+
     probe_results = []
     for i in range(0, len(shifted), 5):
         batch = shifted[i:i + 5]
         results = await asyncio.gather(*[
-            probe_agent(a, topic, original_positions.get(a.id, a.position))
+            probe_agent(
+                a, topic, original_positions.get(a.id, a.position),
+                cumulative_arg=batch_ledger.get(a.id, {}).get("arg", 0.0),
+                cumulative_peer=batch_ledger.get(a.id, {}).get("peer", 0.0),
+            )
             for a in batch
         ])
         probe_results.extend(results)
